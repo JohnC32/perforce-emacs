@@ -2,7 +2,7 @@
 
 * Introduction
 
-Integration of the [[http://www.perforce.com/][Perforce]] software version management system into [[http://www.gnu.org/software/emacs/][GNU Emacs]]. It provides Emacs
+Integration of the [[http://www.perforce.com/][Perforce]] software version management system into [[http://www.gnu.org/software/emacs/][GNU Emacs]]. p4.el provides Emacs
 interfaces that map directly to Perforce commands.
 
 This version started with the 2015 Version 12.0 from Gareth Rees <gdr@garethrees.org>
