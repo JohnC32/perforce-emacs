@@ -44,17 +44,24 @@
 
 ;;; Installation:
 
-;; 1. Download p4.el and compile it:
-;; 
-;;      emacs -Q -batch -f batch-byte-compile /path/to/dir/containing/p4.el
+;; In your .emacs, ensure the path to the directory containing p4.el
+;; is in the `load-path' variable:
 ;;
-;; 2. In your ~.emacs~ add:
-;; 
-;;      (add-to-list 'load-path "/path/to/dir/containing/p4.el")
-;;      (require 'p4)
-;; 
-;; By default, the P4 global key bindings start with ~C-c p~. If you prefer a different key prefix,
-;; then you should customize the setting ~p4-global-key-prefix~.
+;;     (add-to-list 'load-path "/full/path/to/dir/containing/p4.el/")
+;;
+;; Then load the library:
+;;
+;;     (require 'p4)
+;;
+;; By default, the P4 global key bindings start with C-x p. If you
+;; prefer a different key prefix, then you should customize the
+;; setting `p4-global-key-prefix'.
+;;
+;; To compile the Perforce help text into the Emacs documentation
+;; strings for each command, you must byte-compile this file:
+;;
+;;     $ emacs -Q -batch -f batch-byte-compile /full/path/to/file/p4.el
+
 
 ;;; Code:
 
@@ -2434,12 +2441,11 @@ Specify NO-PROMPT as t when caller is going to re-prompt."
                    :callback 'p4-activate-file-change-log-buffer))
 
 (defvar p4-filelog-mode-head-text
-  "# keys- s: filelog-short-format  l: filelog-long-format  n: goto-next-change  p: goto-prev-change
-#  RET: run action at point  f: find-file-other-window   d: p4-diff2
-#  k/j: scroll-{down/up}-line-other-window   b/u: BS/SPC: scroll-{down/up}-page-other-window
-#  </>: {top/bottom}-of-buffer-other-window
+  "# keys- s: short-format  l: long-format  n: goto-next-item  p: goto-prev-item
+#  RET: run-action-at-point  f: find-file-other-window  e: p4-ediff2  D: p4-diff2
+#  ScrollOtherWindow-  k/j: {down/up}-line  d/u: {down/up}-page  </>: top/bottom
 "
-  "Text added to top of p4 filelog's")
+  "Text added to top of p4 filelog and related buffers")
 
 (defun p4-activate-file-change-log-buffer ()
   (save-excursion
@@ -2476,7 +2482,6 @@ Specify NO-PROMPT as t when caller is going to re-prompt."
                              '(invisible t isearch-open-invisible t))))
     (p4-find-change-numbers (point-min) (point-max))
     (goto-char (point-min))
-    (forward-line 1)
     (insert p4-filelog-mode-head-text)
     (setq buffer-invisibility-spec (list))))
 
@@ -3758,21 +3763,21 @@ a terminal"
 
 (defvar p4-filelog-mode-map
   (let ((map (p4-make-derived-map p4-basic-mode-map)))
-    (define-key map "d" 'p4-diff2)
-    (define-key map "f" 'p4-find-file-other-window)
     (define-key map "s" 'p4-filelog-short-format)
     (define-key map "l" 'p4-filelog-long-format)
+    (define-key map "n" 'p4-filelog-goto-next-item)
+    (define-key map "p" 'p4-filelog-goto-prev-item)
+    (define-key map "f" 'p4-find-file-other-window)
+    (define-key map "e" 'p4-ediff2)
+    (define-key map "D" 'p4-diff2)
     (define-key map "k" 'p4-scroll-down-line-other-window)
     (define-key map "j" 'p4-scroll-up-line-other-window)
-    (define-key map "b" 'p4-scroll-down-page-other-window)
+    (define-key map "d" 'p4-scroll-down-page-other-window)
     (define-key map "u" 'p4-scroll-up-page-other-window)
     (define-key map [backspace] 'p4-scroll-down-page-other-window)
     (define-key map " " 'p4-scroll-up-page-window-other-window)
     (define-key map "<" 'p4-top-of-buffer-other-window)
     (define-key map ">" 'p4-bottom-of-buffer-other-window)
-    (define-key map "n" 'p4-goto-next-change)
-    (define-key map "p" 'p4-goto-prev-change)
-    (define-key map "N" (lookup-key map "p"))
     map)
   "The key map to use for selecting filelog properties.")
 
@@ -3852,25 +3857,42 @@ a terminal"
   (goto-char (point-max))
   (other-window -1))
 
-(defun p4-goto-next-change ()
-  "Next change"
+(defun p4-filelog-goto-next-item ()
+  "Next change or item"
   (interactive)
   (forward-line 1)
-  (let ((next-change-re "^\\.\\.\\. #"))
-    (while (and (not (eobp))
-                (not (looking-at next-change-re)))
-      (forward-line 1))
-    (move-to-column (if (looking-at next-change-re) 5 0))))
+  (if (string-match "^P4 filelog" (buffer-name))
+      (let ((next-change-re "^\\.\\.\\. #"))
+        (while (and (not (eobp))
+                    (not (looking-at next-change-re)))
+          (forward-line 1))
+        (move-to-column (if (looking-at next-change-re) 5 0)))
+    ;; else non-filelog buffer using filelog mode
+    (let ((c (current-column)))
+      (while (and (not (eobp))
+                  (or (looking-at "^#") ;; header comment?
+                      (get-char-property (point) 'invisible)))
+        (forward-line 1))
+      (move-to-column c))))
 
-(defun p4-goto-prev-change ()
-  "Previous change"
+(defun p4-filelog-goto-prev-item ()
+  "Previous change or item"
   (interactive)
   (forward-line -1)
-  (let ((prev-change-re "^\\.\\.\\. #"))
-    (while (and (not (bobp))
-                (not (looking-at prev-change-re)))
-      (forward-line -1))
-    (move-to-column (if (looking-at prev-change-re) 5 0))))
+  (if (string-match "^P4 filelog" (buffer-name))
+      (let ((prev-change-re "^\\.\\.\\. #"))
+        (while (and (not (bobp))
+                    (not (looking-at prev-change-re)))
+          (forward-line -1))
+        (move-to-column (if (looking-at prev-change-re) 5 0)))
+    ;; else non-filelog buffer using filelog mode
+    (let ((c (current-column)))
+      (while (and (not (bobp))
+                  (or (looking-at "^#") ;; header comment?
+                      (get-char-property (point) 'invisible)))
+        (forward-line -1))
+      (move-to-column c))))
+
 
 ;;; Diff mode:
 
