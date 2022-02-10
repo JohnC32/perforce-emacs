@@ -1,0 +1,120 @@
+#+startup: showall
+
+* Introduction
+
+Integration of the [[http://www.perforce.com/][Perforce]] software version management system into [[http://www.gnu.org/software/emacs/][GNU Emacs]]. It provides Emacs
+interfaces that map directly to Perforce commands.
+
+This version started with the 2015 Version 12.0 from Gareth Rees <gdr@garethrees.org>
+https://github.com/gareth-rees/p4.el. This version has significant changes, features, fixes, and
+performance improvements. One example difference is the elimination of the Perforce status in the
+mode line. Perforce interactions can be slow and this slowed Emacs. Now all interactions with
+Perforce are explicit and invoked from a P4 menu selection or keybinding. This means that Emacs will
+be performant even if the Perforce server is slow or not responding. By default, most commands
+prompt you to run the action requests, thus enable you to provide additional switches.
+
+Notes (Feb-2022):
+
+- Contributions are welcome, though it's not clear how much longer I'll be using Perforce so
+  if someone wants to take ownership please do so.
+
+- p4.el compiles without warnings and is known with Emacs 24, 25, 26, and 27.
+
+- No known bugs
+
+* Installation
+
+1. Download p4.el and compile it:
+
+   #+begin_src bash
+     emacs -Q -batch -f batch-byte-compile /path/to/dir/containing/p4.el
+   #+end_src
+
+2. In your ~.emacs~ add:
+
+   #+begin_src emacs-lisp
+     (add-to-list 'load-path "/path/to/dir/containing/p4.el")
+     (require 'p4)
+   #+end_src
+
+By default, the P4 global key bindings start with ~C-c p~. If you prefer a different key prefix,
+then you should customize the setting ~p4-global-key-prefix~.
+
+* Use
+
+Use the P4 menu which contains:
+
+#+begin_example
+ ------
+   C-c p a   p4 add      Open a new file to add to the depot
+   C-c p e   p4 edit     Open an existing file for edit
+   C-c p r   p4 revert   Discard changes from an opened file
+   C-c p x   p4 delete   Open an existing file for deletion from the depot
+   C-c p m   p4 move     Move (rename) opened file from one location to another
+   C-c p E   p4 reopen   Reopen (move between changelists or change file type)
+ ------
+   C-c p A   p4 fstat    Display file attributes - have revision, etc.
+   C-c p f   p4 filelog  List file revision history
+ Diff
+   C-c p -               Ediff file with its original client version
+   C-c p _               Ediff two versions of a depot file
+   C-c p `               Ediff file with head version
+   C-c p =   p4 diff     Diff of client file with depot file
+   C-c p d   p4 diff2    Diff a set of depot files to another
+   C-c p C-= p4 diff     Diff all p4 opened files
+                         N: next file, P: prev file, RET: visit region in file
+                         n: next diff, p: prev diff
+ Changes
+   C-c p o   p4 opened   List open files and display file status
+   C-c p C-p p4 changes  Show pending changelists
+   C-c p C-s p4 changes  Show shelved changelists
+   C-c p M-s p4 changes  Show submitted changelists
+   C-c p D   p4 describe Display a changelist description
+   C-c p C-d p4 describe Display a changelist description with diff's
+   C-c p C   p4 change   Create or edit a changelist description
+   C-c p M-s p4 shelve   Store files from a pending changelist into the depot
+   C-c p M-u p4 unshelve Restore shelved files from pending change to workspace
+   C-c p S   p4 submit   Submit opened files to depot
+   C-c p j   p4 job      Create or edit a job (defect) specification
+   C-c p J   p4 jobs     Display list of jobs
+   C-c p X   p4 fix      Mark jobs as being fixed by the specified changelist
+ Workspace
+   C-c p g   p4 update   Sync client with its view of the depot (w/safety check)
+   -         p4 sync     Synchronize the client with its view of the depot
+   -         p4 sync @=  Run 'p4 sync @=CN' to sync ONLY the contents of CN
+   C-c p R   p4 sync -f  Refresh contents of an unopened file
+   C-c p s   p4 status   Identify differences between the workspace and depot
+   C-c p z   p4 reconcile Reconcile changes to workspace w/Perforce
+   C-c p F   p4 files    List files in the depot
+   C-c p G               Display the name of the current Perforce client
+   C-c p H   p4 have     List the revisions most recently synced to workspace
+   C-c p w   p4 where    Show how file names are mapped by the client view
+ ------
+   C-c p I   p4-integ    Integrate one set of files into another
+   C-c p C-r p4-resolve  Resolve integrations and updates to workspace files
+ ------
+   C-c p p   p4 print    Visit version of file in a buffer
+   C-c p V   p4 annotate Print file lines and change info following integrations
+   C-c p C-f             Visit client file corresponding to depot spec
+ Config
+   C-c p b   p4 branch   Create, modify, or delete a branch view specification
+   C-c p B   p4 branches Display list of branch specifications
+   C-c p l   p4 label    Create or edit a label specification
+   C-c p L   p4 labels   Display list of defined labels
+   C-c p C-l p4 labelsync Apply the label to the contents of client workspace
+   C-c p c   p4 client   Create or edit a client workspace spec and its view
+   C-c p u   p4 user     Create or edit a user specification
+   C-c p U   p4 users    List Perforce users
+   -                     Set P4CONFIG
+   -                     Set P4CLIENT
+   -                     Set P4PORT
+   -         p4 set      Display Perforce Variables
+   C-c p i   p4 info     Display client/server information
+   C-c p v               Display the Perforce-Emacs integration, P4.el, version
+ ------
+   C-c p q               Quit WINDOW and bury its buffer
+   C-c p h   p4 help     Display 'p4 help CMD'
+#+end_example
+
+# LocalWords:  showall el gdr garethrees changelists filelog Ediff prev changelist diff's unshelve
+# LocalWords:  CN integ labelsync
