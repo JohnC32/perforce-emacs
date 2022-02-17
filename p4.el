@@ -44,24 +44,17 @@
 
 ;;; Installation:
 
-;; In your .emacs, ensure the path to the directory containing p4.el
-;; is in the `load-path' variable:
+;; 1. Download p4.el and compile it:
 ;;
-;;     (add-to-list 'load-path "/full/path/to/dir/containing/p4.el/")
+;;      emacs -Q -batch -f batch-byte-compile /path/to/dir/containing/p4.el
 ;;
-;; Then load the library:
+;; 2. In your ~.emacs~ add:
 ;;
-;;     (require 'p4)
+;;      (add-to-list 'load-path "/path/to/dir/containing/p4.el")
+;;      (require 'p4)
 ;;
-;; By default, the P4 global key bindings start with C-x p. If you
-;; prefer a different key prefix, then you should customize the
-;; setting `p4-global-key-prefix'.
-;;
-;; To compile the Perforce help text into the Emacs documentation
-;; strings for each command, you must byte-compile this file:
-;;
-;;     $ emacs -Q -batch -f batch-byte-compile /full/path/to/file/p4.el
-
+;; By default, the P4 global key bindings start with ~C-c p~. If you prefer a different key prefix,
+;; then you should customize the setting ~p4-global-key-prefix~.
 
 ;;; Code:
 
@@ -492,17 +485,17 @@ Display file attributes - have revision, etc."]
      ["EDiff current" p4-ediff
       :help "M-x p4-ediff
 Ediff file with its original client version"]
-     ["EDiff two versions"
+     ["EDiff two versions" p4-ediff2
       :help "M-x p4-ediff2
 Ediff two versions of a depot file"]
-     ["EDiff current with head"
+     ["EDiff current with head" p4-ediff-with-head
       :help "M-x p4-ediff-with-head
 Ediff file with head version"]
      ["Diff file with its original client version" p4-diff
       :help "M-x p4-diff"]
-     ["Diff file with its original client"
+     ["Diff file with its original client" p4-diff2
       :help "M-x p4-diff2"]
-     ["Diff all opened files"
+     ["Diff all opened files" p4-diff-all-opened
       :help "M-x p4-diff-all-opened"]
      )
     ["--" nil nil]
