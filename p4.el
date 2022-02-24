@@ -81,7 +81,7 @@
 (eval-and-compile
   ;; This is needed at compile time by p4-help-text.
   (defcustom p4-executable
-    (locate-file "p4" (append exec-path '("/usr/local/netbin" "/usr/local/bin" "~/bin" ""))
+    (locate-file "p4" (append exec-path '("/usr/local/bin" "~/bin" ""))
                  (if (memq system-type '(ms-dos windows-nt)) '(".exe"))
                  #'file-executable-p)
     "The p4 executable."
@@ -555,18 +555,18 @@ Refresh contents of an unopened file: p4 sync -f FILE"]
       :help "M-x p4-status
 Previews output of open files for add, delete, and/or edit in order to reconcile a workspace
 with changes made outside of Perforce"]
-     ["Reconcile files with depot (M-x p4-reconcile)" p4-reconcile
+     ["Reconcile files with depot" p4-reconcile
       :help "M-x p4-reconcile
 Open files for add, delete, and/or edit to reconcile
 client with workspace changes made outside of Perforce"]
-     ["List files in depot (M-x p4-files)" p4-files
+     ["List files in depot" p4-files
       :help "M-x p4-files"]
-     ["Get client name (M-x p4" p4-get-client-name
+     ["Get client name" p4-get-client-name
       :help "M-x p4-get-client-name"]
      ["Have (list files in workspace)" p4-have
       :help "M-x p4-have
 List the revisions most recently synced to workspace"]
-     ["Show Where File is Mapped" p4-where
+     ["Show where file is mapped" p4-where
       :help "M-x p4-where
 Show how file names are mapped by the client view"]
      )
