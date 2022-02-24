@@ -1245,7 +1245,8 @@ instead. You can specify a custom error function using `p4-error-handler'."
              (set-buffer-modified-p nil)
              (p4-process-show-output)
              (when p4-process-after-show
-               (funcall p4-process-after-show)))))))
+               (funcall p4-process-after-show)
+               (setq p4-process-after-show nil)))))))
 
 (defun p4-process-sentinel (process message)
   (let ((buffer (process-buffer process)))
@@ -1487,6 +1488,11 @@ first."
     (when (string-match "P4 .*\\(//[^#]+#[0-9]+\\)" name)
       (match-string 1 name))))
 
+(defun p4--filelog-buffer-get-filename ()
+  "If in a 'P4 filelog ...' buffer return the path name"
+  (when (string-match "^P4 filelog .*?\\([^ \t]+\\)$" (buffer-name))
+    (match-string 1 (buffer-name))))
+
 (defun p4-context-single-filename (&optional do-not-encode-path-for-p4 no-error)
   "Return a single filename based on the current context.
 Try the following, in order, until one succeeds:
@@ -1513,7 +1519,11 @@ file on disk, e.g. for p4 add."
                    ((and (not do-not-encode-path-for-p4)
                          (p4-basic-list-get-filename)))
                    ((and (not do-not-encode-path-for-p4)
-                         (p4-get-depot-path-from-buffer-name))))))
+                         (p4-get-depot-path-from-buffer-name)))
+                   ;; p4-filelog => get it from the buffer name
+                   ((and (not do-not-encode-path-for-p4)
+                         (p4--filelog-buffer-get-filename)))
+                    )))
     (if (and (not ans) (not no-error))
         (error "Buffer is not associated with a file"))
     ans))
@@ -1694,11 +1704,13 @@ twice in the expansion."
 (defp4cmd p4-change (&rest args)
   "change"
   "Create, edit, submit, or delete a changelist description."
-  (interactive (p4-read-args* "Run p4 change (with args): "
-                              (if (thing-at-point 'number)
-                                  (format "%s" (thing-at-point 'number)))
-                              'pending))
-  (p4-set-default-directory-to-root)
+  (interactive
+   (progn
+     (p4-set-default-directory-to-root)
+     (p4-read-args* "Run p4 change (with args): "
+                    (if (thing-at-point 'number)
+                        (format "%s" (thing-at-point 'number)))
+                    'pending)))
   (p4-form-command "change" args :move-to "Description:\n\t"
                    :mode 'p4-change-form-mode
                    :head-text p4-change-head-text
@@ -1711,8 +1723,9 @@ twice in the expansion."
 
 (defp4cmd* changes ;; (defun p4-changes () ...)
   "Display list of pending, submitted, or shelved changelists."
-  (p4-make-list-from-string p4-changes-default-args)
-  (p4-set-default-directory-to-root)
+  (progn
+    (p4-set-default-directory-to-root)
+    (p4-make-list-from-string p4-changes-default-args))
   (p4-file-change-log cmd args t))
 
 (defp4cmd p4-changes-pending ()
@@ -1736,8 +1749,10 @@ twice in the expansion."
 (defp4cmd p4-client (&rest args)
   "client"
   "Create or edit a client workspace specification and its view."
-  (interactive (p4-read-args* "p4 client: " "" 'client))
-  (p4-set-default-directory-to-root)
+  (interactive
+   (progn
+     (p4-set-default-directory-to-root)
+     (p4-read-args* "p4 client: " "" 'client)))
   (p4-form-command "client" args :move-to "\\(Description\\|View\\):\n\t"))
 
 (defp4cmd* clients ;; p4-clients
@@ -2135,8 +2150,9 @@ followed by \"delete\"."
 
 (defp4cmd* opened ;; p4-opened
   "List open files and display file status."
-  nil
-  (p4-set-default-directory-to-root)
+  (progn
+    (p4-set-default-directory-to-root)
+    nil)
   (p4-call-command cmd args :mode 'p4-opened-list-mode
                    :callback (lambda ()
                                (p4-regexp-create-links "\\<change \\([1-9][0-9]*\\) ([a-z]+)"
@@ -2338,7 +2354,8 @@ return a buffer listing those files. Otherwise, return NIL."
 (defp4cmd* sync ;; p4-sync
   "Synchronize the client with its view of the depot."
   nil
-  (p4-call-command cmd args :mode 'p4-basic-list-mode))
+  (let (p4-default-directory) ;; use default-directory
+    (p4-call-command cmd args :mode 'p4-basic-list-mode)))
 
 (defp4cmd p4-sync-changelist (num)
   "sync"
@@ -3288,10 +3305,18 @@ is NIL, otherwise return NIL."
   (let ((completion (p4-get-completion completion-type 'noerror)))
     (when completion (setf (p4-completion-cache completion) nil))))
 
+(defun p4--modify-prompt-with-dir (prompt)
+  "If `p4-default-directory' is not same as `default-directory' modify prompt with it"
+  (when (and p4-default-directory
+             (not (string= p4-default-directory default-directory)))
+    (setq prompt (concat (format "In %s\n" p4-default-directory) prompt)))
+  prompt)
+
 (defun p4-read-arg-string (prompt &optional initial-input completion-type)
   (let* ((minibuffer-local-completion-map
           (copy-keymap minibuffer-local-completion-map)))
     (define-key minibuffer-local-completion-map " " 'self-insert-command)
+    (setq prompt (p4--modify-prompt-with-dir prompt))
     (if completion-type
         (p4-completing-read completion-type prompt initial-input)
       (completing-read prompt #'p4-arg-string-completion nil nil
