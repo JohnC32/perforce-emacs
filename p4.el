@@ -336,6 +336,7 @@ commit command.")
 
 ;; Local variables in P4 depot buffers.
 (defvar p4-default-directory nil "Original value of default-directory.")
+(defvar p4--opened-args nil "used internally by `p4-opened'")
 
 (dolist (var '(p4-mode p4-process-args p4-process-callback
                        p4-process-buffers p4-process-pending
@@ -343,7 +344,8 @@ commit command.")
                        p4-process-pop-up-output p4-process-synchronous
                        p4-form-commit-command
                        p4-form-commit-success-callback
-                       p4-form-commit-failure-callback p4-default-directory))
+                       p4-form-commit-failure-callback p4-default-directory
+                       p4--opened-args))
   (make-variable-buffer-local var)
   (put var 'permanent-local t))
 
@@ -1490,8 +1492,15 @@ first."
 
 (defun p4--filelog-buffer-get-filename ()
   "If in a 'P4 filelog ...' buffer return the path name"
-  (when (string-match "^P4 filelog .*?\\([^ \t]+\\)$" (buffer-name))
-    (match-string 1 (buffer-name))))
+  ;; If (buffer-name) looks like
+  ;;    P4 filelog -l -t //branch/path/to/file.ext
+  ;;    P4 filelog -l -t //branch/path/to/file.ext#11
+  ;;    P4 filelog -l -t //branch/path/to/file.ext#11 <directory/>
+  ;; return //branch/path/to/file.ext
+  (let ((buf-name (buffer-name)))
+    (setq buf-name (replace-regexp-in-string " <[^>]+>$" "" buf-name))
+    (when (string-match "^P4 filelog .*?\\([^ \t#]+\\)\\(?:#[0-9]+\\)?$" buf-name)
+      (match-string 1 buf-name))))
 
 (defun p4-context-single-filename (&optional do-not-encode-path-for-p4 no-error)
   "Return a single filename based on the current context.
@@ -1523,16 +1532,16 @@ file on disk, e.g. for p4 add."
                    ;; p4-filelog => get it from the buffer name
                    ((and (not do-not-encode-path-for-p4)
                          (p4--filelog-buffer-get-filename)))
-                    )))
+                   )))
     (if (and (not ans) (not no-error))
         (error "Buffer is not associated with a file"))
     ans))
 
-(defun p4-context-filenames-list (&optional do-not-encode-path-for-p4)
+(defun p4-context-filenames-list (&optional do-not-encode-path-for-p4 no-error)
   "Return a list of filenames based on the current context."
   (let ((f (p4-dired-get-marked-files)))
     (if f (mapcar 'p4-follow-link-name f)
-      (let ((f (p4-context-single-filename do-not-encode-path-for-p4)))
+      (let ((f (p4-context-single-filename do-not-encode-path-for-p4 no-error)))
         (when f (list f))))))
 
 (defcustom p4-open-in-changelist nil
@@ -1650,8 +1659,8 @@ twice in the expansion."
          (decoded-file (p4-decode-path filespec)))
     (when (file-regular-p decoded-file)
       (setq filespec (concat filespec "#" (p4-have-rev filespec))))
-    (p4-annotate-internal filespec (and (string-equal f (p4-buffer-file-name))
-                                        (line-number-at-pos (point))))))
+    (p4--annotate-internal filespec (and (string-equal f (p4-buffer-file-name))
+                                         (line-number-at-pos (point))))))
 
 (defp4cmd p4-branch (&rest args)
   "branch"
@@ -1716,7 +1725,7 @@ twice in the expansion."
                    :head-text p4-change-head-text
                    :success-callback 'p4-change-success))
 
-(defcustom p4-changes-default-args (concat "-m 200 -L -s submitted -u " user-login-name " ...")
+(defcustom p4-changes-default-args (concat "-m 200 -L -s submitted -u " user-login-name)
   "Default arguments for p4-changes command"
   :type 'string
   :group 'p4)
@@ -2148,16 +2157,132 @@ followed by \"delete\"."
 
 (defalias 'p4-rename 'p4-move)
 
-(defp4cmd* opened ;; p4-opened
+(defun p4--opened-get-head-rev (opened-files)
+  "Used by p4-opened to run p4 fstat and return a hash of depotFiles to head-rev's"
+  (let ((x-file (make-temp-file "p4-x-file-opened-" nil ".txt"))
+        (head-rev-table (make-hash-table :test 'equal))
+        depotFile
+        headRev
+        bad-content)
+
+    (with-temp-file x-file
+      (insert opened-files))
+
+    ;; p4 -x x-file fstat -T "depotFile, headRev"
+    ;; Produces
+    ;;  ... depotFile //branch/path/to/file1.ext
+    ;;  ... headRev NUM
+    ;;  <newline>
+    ;;  ... depotFile //branch/path/to/file2.ext
+    ;;  <newline>      // no headRev when file is a p4 add, delete, dest of move
+
+    (with-temp-buffer
+      (p4-run (list "-x" x-file "fstat" "-T" "depotFile, headRev"))
+      (goto-char (point-min))
+      (while (and (not (eobp))
+                  (not bad-content))
+        (if (looking-at "^\\.\\.\\. depotFile \\([^[:space:]]+\\)$")
+            (progn
+              (setq depotFile
+                    (buffer-substring-no-properties (match-beginning 1) (match-end 1))
+                    headRev nil)
+              (forward-line)
+              (when (looking-at "^\\.\\.\\. headRev \\([0-9]+\\)")
+                (setq headRev
+                      (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
+                (forward-line))
+              (if (looking-at "^$")
+                  (progn
+                    (when headRev
+                      (puthash depotFile headRev head-rev-table))
+                    (forward-line))
+                (setq bad-content t)))
+          (setq bad-content t))))
+
+    (when bad-content
+      (setq head-rev-table nil))
+    ;; answer
+    head-rev-table))
+
+(defun p4--opened-internal-move-to-start ()
+  "Locate first non-comment line in 'P4 opened' buffer"
+  (goto-char (point-min))
+  (while (looking-at "^#")
+    (forward-line)))
+
+(defun p4--opened-internal (args)
+  "Use both 'p4 opened' and 'p4 fstat' to display a 'P4 opened <dir>' containing
+  //branch/path/to/file.exe#REV OPENED_INFO; head#HEAD_REV
+where HEAD_REV is highlighted if it is different from REV"
+  (when p4-follow-symlinks
+    (p4-refresh-buffer-with-true-path))
+  (let ((opened-buf (p4-process-buffer-name (cons "opened" args))))
+    (with-current-buffer (p4-make-output-buffer opened-buf 'p4-opened-list-mode)
+
+      (setq p4--opened-args args)
+      (p4-run (cons "opened" args))
+
+      (let ((inhibit-read-only t))
+        (goto-char (point-min))
+        (when (looking-at "^//")
+          (insert "\
+# keys- r: p4 revert  c: p4 reopen -c CHANGENUM  t: p4 reopen -t FILETYPE  g: refresh p4 opened
+#       n/p: {next/prev}-line  k/j: {down/up}-line  d/u: {down/up}-page  </>: top/bottom
+#       RET: visit-file  'C-c p KEY': run p4 command  'C-c p -': p4-ediff
+")))
+      (p4--opened-internal-move-to-start)
+      
+      ;; Each line of current buffer should contain
+      ;;    //branch/path/to/file.exe#REV OPENED_INFO
+      ;; Set opened-files containing "//branch/path/to/file.exe\n" lines
+      (let (opened-files
+            bad-content ;; bad content occurs when p4 opened was invoked outside of a workspace
+            head-rev-table)
+        (while (and (not (eobp))
+                    (not bad-content))
+          (if (looking-at "^\\(//[^ #]+\\)")
+              (setq opened-files
+                    (concat opened-files
+                            (buffer-substring-no-properties (match-beginning 1) (match-end 1))
+                            "\n"))
+            (setq bad-content t))
+          (forward-line))
+
+        (when (not bad-content)
+          ;; p4 opened content is good, now run p4 fstat and load
+          ;; head-rev-table with KEY = depotFile, VALUE = headRev.
+          (setq head-rev-table (p4--opened-get-head-rev opened-files))
+          (when head-rev-table
+            ;; Augment the p4 opened lines with the headRev's
+            (let ((inhibit-read-only t))
+              (p4--opened-internal-move-to-start)
+              (while (and (not (eobp))
+                          (not bad-content))
+                (if (looking-at "^\\(//[^ #]+\\)#\\([0-9]+\\)")
+                    (let* ((depotFile (buffer-substring-no-properties
+                                       (match-beginning 1) (match-end 1)))
+                           (haveRev (buffer-substring-no-properties
+                                     (match-beginning 2) (match-end 2)))
+                           (headRev (gethash depotFile head-rev-table)))
+                      (when headRev
+                        (move-end-of-line 1)
+                        (let ((headRevTxt (concat (if (string= haveRev headRev)
+                                                      "; head#"
+                                                    "; HEAD#")
+                                                  headRev)))
+                          (insert headRevTxt)))
+                      (forward-line))
+                  (setq bad-content t)))))))
+      (p4--opened-internal-move-to-start))
+    (display-buffer opened-buf)))
+
+(defp4cmd* opened ;; (defun p4-opened (&optional ARGS))
   "List open files and display file status."
   (progn
     (p4-set-default-directory-to-root)
     nil)
-  (p4-call-command cmd args :mode 'p4-opened-list-mode
-                   :callback (lambda ()
-                               (p4-regexp-create-links "\\<change \\([1-9][0-9]*\\) ([a-z]+)"
-                                                       'pending "Edit change"))
-                   :pop-up-output (lambda () t)))
+  (ignore cmd)
+  (p4--opened-internal args))
 
 (defp4cmd* print ;; p4-print
   "Write a depot file to a buffer."
@@ -2255,7 +2380,8 @@ changelist."
   "Run p4 revert on current buffer if visiting a file,
 otherwise just p4 revert"
   (interactive)
-  (if buffer-file-name
+  (if (or buffer-file-name
+          (p4-context-filenames-list nil t))
       (call-interactively 'p4-revert)
     (call-interactively 'p4-revert-non-file)))
 
@@ -2962,8 +3088,7 @@ return struct will invalid (revision will be -1)."
            :user user
            :description desc))))))
 
-
-(defun p4-annotate-internal (filespec &optional src-line)
+(defun p4--annotate-internal (filespec &optional src-line)
   "Annotate a single FILESPEC which is a p4 encoded path. This
 can be a path to a local file or a depot path (optionally
 including the #REV)."
@@ -2986,7 +3111,10 @@ including the #REV)."
                  current-change)
             (p4-run (list "print" filespec))
             (p4-fontify-print-buffer)
-            (forward-line 1)
+            (forward-line 1) ;; skip over depot path, //branch/filespec
+            (insert (propertize
+                     "# keys-  n: next change  p: prev change  l: toggle line wrap\n"
+                     'face 'font-lock-comment-face))
             (dolist (change line-changes)
               (cl-incf current-line)
               (let ((percent (/ (* current-line 100) lines)))
@@ -3436,11 +3564,10 @@ is NIL, otherwise return NIL."
     (define-key map "g" 'revert-buffer)
     (define-key map "k" 'p4-scroll-down-1-line)
     (define-key map "j" 'p4-scroll-up-1-line)
-    (define-key map "b" 'p4-scroll-down-1-window)
+    (define-key map "d" 'p4-scroll-down-1-window)
+    (define-key map "u" 'p4-scroll-up-1-window)
     (define-key map "n" 'next-line)
     (define-key map "p" 'previous-line)
-    (define-key map [backspace] 'p4-scroll-down-1-window)
-    (define-key map " " 'p4-scroll-up-1-window)
     (define-key map "<" 'p4-top-of-buffer)
     (define-key map ">" 'p4-bottom-of-buffer)
     (define-key map "=" 'delete-other-windows)
@@ -3590,12 +3717,22 @@ is NIL, otherwise return NIL."
   "The keymap to use in P4 Basic List Mode.")
 
 (defvar p4-basic-list-font-lock-keywords
-  '(("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:move/\\)?add" 1 'p4-depot-add-face)
-    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:branch\\|integrate\\)" 1 'p4-depot-branch-face)
-    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:move/\\)?delete" 1 'p4-depot-delete-face)
-    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:edit\\|updating\\)" 1 'p4-depot-edit-face)
-    ;; //mw/Bvariant_2/matlab/src/simulink/sl_engin/cdata.cpp#1 - was edit, reverted
-    ("^\\(//.*#[1-9][0-9]*\\)" 1 'p4-link-face)))
+  '(
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:move/\\)?add"
+     1 'p4-depot-add-face)
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:branch\\|integrate\\)"
+     1 'p4-depot-branch-face)
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:move/\\)?delete"
+     1 'p4-depot-delete-face)
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:edit\\|updating\\)"
+     1 'p4-depot-edit-face)
+    ;; //branch/path/to/file.ext#1 - was edit, reverted
+    ("^\\(//.*#[1-9][0-9]*\\)" 1 'p4-link-face)
+    ("\\(HEAD#[0-9]+\\)"
+     1 'font-lock-warning-face prepend)
+    ("\\(^#[^\n]+\\)"
+     1 'p4-form-comment-face
+     )))
 
 (define-derived-mode p4-basic-list-mode p4-basic-mode "P4 Basic List"
   (setq font-lock-defaults '(p4-basic-list-font-lock-keywords t)))
@@ -3631,9 +3768,10 @@ is NIL, otherwise return NIL."
 
 (defvar p4-opened-list-mode-map
   (let ((map (p4-make-derived-map p4-basic-list-mode-map)))
-    (define-key map "r" 'p4-revert)
-    (define-key map "t" 'p4-opened-list-type)
-    (define-key map "c" 'p4-opened-list-change)
+    (define-key map "c" 'p4--opened-reopen-changenum)
+    (define-key map "g" 'p4--opened-refresh)
+    (define-key map "r" 'p4--opened-revert)
+    (define-key map "t" 'p4--opened-reopen-filetype)
     map)
   "The key map to use in P4 Status List Mode.")
 
@@ -3644,21 +3782,53 @@ is NIL, otherwise return NIL."
 (define-derived-mode p4-opened-list-mode p4-basic-list-mode "P4 Opened List"
   (setq font-lock-defaults '(p4-opened-list-font-lock-keywords t)))
 
-(defun p4-opened-list-type (type)
-  (interactive "sNew filetype: ")
+(defun p4--opened-refresh ()
+  "Re-run 'p4 opened' in a 'P4 opened' buffer"
+  (interactive)
+  (let ((curr-point (point))
+        depot-path)
+    (save-excursion
+      (beginning-of-line)
+      (when (looking-at p4-basic-list-filename-regexp)
+        (setq depot-path (buffer-substring-no-properties (match-beginning 2) (match-end 2))))
+      (p4-opened p4--opened-args)
+      (when (and depot-path
+                 (re-search-forward (concat "^" (regexp-quote depot-path) "#") nil t))
+        (beginning-of-line)
+        (setq curr-point (point))))
+    (goto-char (if (< curr-point (point-max)) curr-point (point-max)))))
+
+(defun p4--opened-reopen-filetype (filetype)
+  "Change file type: p4 reopen -c FILETYPE"
+  (interactive "sp4 reopen -c FILETYPE (text, binary, etc): ")
   (save-excursion
     (beginning-of-line)
     (when (looking-at p4-basic-list-filename-regexp)
-      (p4-reopen (list "-t" type (match-string 2))))))
+      (p4-reopen (list "-t" filetype (match-string 2)))))
+  (p4--opened-refresh))
 
-(defun p4-opened-list-change (change)
+(defun p4--opened-reopen-changenum (changenum)
+  "Move to specified changelist: p4 reopen -c CHANGENUM"
   (interactive
-   (list (p4-completing-read 'pending "New change: ")))
+   (list (p4-completing-read 'pending "p4 reopen -c CHANGENUM (number or default): ")))
   (save-excursion
     (beginning-of-line)
     (when (looking-at p4-basic-list-filename-regexp)
-      (p4-reopen (list "-c" change (match-string 2))))))
+      (p4-reopen (list "-c" changenum (match-string 2)))))
+  (p4--opened-refresh))
 
+(defun p4--opened-revert ()
+  (interactive)
+  (p4-revert)
+  (let ((curr-point (point)))
+    (save-excursion
+      (p4--opened-refresh))
+    (let ((new-point (if (< curr-point (point-max)) curr-point (point-max))))
+      (save-excursion
+        (goto-char new-point)
+        (beginning-of-line)
+        (setq new-point (point)))
+      (goto-char new-point))))
 
 ;;; Status List Mode:
 
@@ -4023,46 +4193,38 @@ file, but a prefix argument reverses this."
 
 (defvar p4-annotate-mode-map
   (let ((map (p4-make-derived-map p4-basic-mode-map)))
-    (define-key map "n" 'p4-next-change-rev-line)
-    (define-key map "p" 'p4-prev-change-rev-line)
-    (define-key map "N" (lookup-key map "p"))
-    (define-key map "l" 'p4-toggle-line-wrap)
+    (define-key map "n" 'p4--annotate-next-change-rev)
+    (define-key map "p" 'p4--annotate-prev-change-rev)
+    (define-key map "l" 'p4--toggle-line-wrap)
     map)
   "The key map to use for browsing annotate buffers.")
 
 (define-derived-mode p4-annotate-mode p4-basic-mode "P4 Annotate")
 
-(defun p4-moveto-print-rev-column (old-column)
-  (let ((colon (save-excursion
-                 (move-to-column 0)
-                 (if (looking-at "[^:\n]*:")
-                     (progn
-                       (goto-char (match-end 0))
-                       (current-column))
-                   0))))
-    (move-to-column old-column)
-    (if (and (< (current-column) colon)
-             (re-search-forward "[^ \n][ :]" nil t))
-        (goto-char (match-beginning 0)))))
-
-(defun p4-next-change-rev-line ()
-  "Next change/revision line"
+(defun p4--annotate-next-change-rev ()
+  "In annotate buffer, move to next change/revision"
   (interactive)
-  (let ((c (current-column)))
-    (move-to-column 1)
-    (re-search-forward "^ *[0-9]+ +[0-9]+[^:\n]+:" nil "")
-    (p4-moveto-print-rev-column c)))
+  (let (new-point)
+    (save-excursion
+      (move-to-column 1)
+      (when (re-search-forward "^ *[0-9]+ +#" nil t)
+        (setq new-point (point))))
+    (when new-point
+      (goto-char new-point))))
 
-(defun p4-prev-change-rev-line ()
-  "Previous change/revision line"
+(defun p4--annotate-prev-change-rev ()
+  "In annotate buffer, move to previous change/revision"
   (interactive)
-  (let ((c (current-column)))
-    (forward-line -1)
-    (move-to-column 32)
-    (re-search-backward "^ *[0-9]+ +[0-9]+[^:\n]*:" nil "")
-    (p4-moveto-print-rev-column c)))
+  (let (new-point)
+    (save-excursion
+      (move-to-column 0)
+      (when (re-search-backward "^ *[0-9]+ +#" nil t)
+        (re-search-forward "#" nil nil)
+        (setq new-point (point))))
+    (when new-point
+      (goto-char new-point))))
 
-(defun p4-toggle-line-wrap ()
+(defun p4--toggle-line-wrap ()
   "Toggle line wrap mode"
   (interactive)
   (setq truncate-lines (not truncate-lines))
