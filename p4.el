@@ -6,7 +6,7 @@
 ;; Copyright (c) 2009      Fujii Hironori
 ;; Copyright (c) 2012      Jason Filsinger
 ;; Copyright (c) 2013-2015 Gareth Rees <gdr@garethrees.org>
-;; Copyright (c) 2015-2022 John Ciolfi <john.ciolfi.32@gmail.com>
+;; Copyright (c) 2015-2022 John Ciolfi
 
 ;; Version: 14.0
 ;;   This version started with the 2015 Version 12.0 from Gareth Rees <gdr@garethrees.org>
