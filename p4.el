@@ -565,6 +565,12 @@ client with workspace changes made outside of Perforce"]
       :help "M-x p4-files"]
      ["Get client name" p4-get-client-name
       :help "M-x p4-get-client-name"]
+     ["Unload" p4-unload
+      :help "M-x p4-unload
+Unload a client, label, or task stream to the unload depot"]
+     ["Reload" p4-reload
+      :help "M-x p4-reload
+Reload an unloaded client, label, or task stream"]
      ["Have (list files in workspace)" p4-have
       :help "M-x p4-have
 List the revisions most recently synced to workspace"]
@@ -1999,7 +2005,25 @@ continuation lines); show it in a pop-up window otherwise."
                                (p4-regexp-create-links "^\\(.*\\)\n" 'group
                                                        "Describe group"))))
 
-(defp4cmd* have ;; p4-have
+(defp4cmd p4-unload (&rest args)
+  "unload"
+  "Unload a client, label, or task stream to the unload depot"
+  (interactive
+   (let* ((client (p4-current-client))
+          (initial-args (if client (concat "-c " (p4-current-client)))))
+     (p4-read-args "p4 unload: " initial-args 'client)))
+  (p4-call-command "unload" args))
+
+(defp4cmd p4-reload (&rest args)
+  "reload"
+  "Reload an unloaded client, label, or task stream"
+  (interactive
+   (let* ((client (p4-current-client))
+          (initial-args (if client (concat "-c " (p4-current-client)))))
+     (p4-read-args "p4 reload: " initial-args 'client)))
+  (p4-call-command "reload" args))
+
+(defp4cmd* have ;; (defun p4-have (args))
   "List the revisions most recently synced to the current workspace."
   (p4-context-filenames-list)
   (p4-call-command cmd args
