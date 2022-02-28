@@ -29,7 +29,7 @@ then you should customize the setting ~p4-global-key-prefix~.
 
 * Use
 
-Use the P4 menu which contains:
+Use the P4 menu or keybindings:
 
 #+begin_example
  ------
