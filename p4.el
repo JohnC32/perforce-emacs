@@ -48,13 +48,13 @@
 ;;
 ;;      emacs -Q -batch -f batch-byte-compile /path/to/dir/containing/p4.el
 ;;
-;; 2. In your ~.emacs~ add:
+;; 2. In your .emacs add:
 ;;
-;;      (add-to-list 'load-path "/path/to/dir/containing/p4.el")
+;;      (add-to-list 'load-path "/path/to/dir/containing/p4")
 ;;      (require 'p4)
 ;;
-;; By default, the P4 global key bindings start with ~C-c p~. If you prefer a different key prefix,
-;; then you should customize the setting ~p4-global-key-prefix~.
+;; By default, the P4 global key bindings start with C-c p. If you prefer a different key prefix,
+;; then you should customize the setting p4-global-key-prefix.
 
 ;;; Code:
 
@@ -72,7 +72,6 @@
 (defvar p4-global-key-prefix)
 (defvar p4-basic-mode-map)
 (defvar p4-annotate-mode-map)
-
 
 ;;; User options:
 
@@ -295,6 +294,14 @@ and should return the //branch/name port if possible or nil."
   "Face for keyword in P4 Form mode."
   :group 'p4-faces)
 
+(defface p4-highlight-face
+  '((((class color) (background light))
+     (:foreground "Firebrick" :background  "yellow"))
+    (((class color) (background dark))
+     (:foreground "chocolate1" :background  "blue3")))
+  "Face used for highlight items"
+  :group 'p4-faces)
+
 ;; Local variables in all buffers.
 (defvar p4-mode nil "P4 minor mode.")
 
@@ -368,6 +375,7 @@ commit command.")
     (define-key map "d"         'p4-diff2)
     (define-key map "D"         'p4-describe)
     (define-key map "\C-d"      'p4-describe-with-diff)
+    (define-key map (kbd "M-d") 'p4-describe-all-files)
     (define-key map "e"         'p4-edit)
     (define-key map "E"         'p4-reopen)
     (define-key map "\C-f"      'p4-depot-find-file)
@@ -519,6 +527,9 @@ Run 'p4 describe -s CHANGE_NUM' on changelist"]
      ["Describe change with diff" p4-describe-with-diff
       :help "M-x p4-describe-with-diff
 Run 'p4 describe -a -du CHANGE_NUM' on changelist"]
+     ["Describe change showing affected and shelved files" p4-describe-all-files
+      :help "M-x p4-describe-all-files
+Show all affected and shelved files in a changelist."]
      ["Create, update, submit, or delete a changelist description" p4-change
       :help "M-x p4-change"]
      ["Shelve" p4-shelve
@@ -623,7 +634,11 @@ Create or edit a user specification"]
      ["--" nil nil]
      ["Set P4CONFIG" p4-set-p4-config
       :help "M-x p4-set-p4-config
-Set the P4CONFIG environment variable to VALUE"]
+Set the P4CONFIG environment variable to VALUE
+P4CONFIG is typically set to the filename '.perforce' and this
+file is placed at the root of your Perforce workspace.  Within
+this file, you place Perforce environment variables, such as
+  P4CLIENT=client_name"]
      ["Set P4CLIENT" p4-set-client-name
       :help "M-x p4-set-client-name
 Set the P4CLIENT environment variable to VALUE"]
@@ -756,9 +771,10 @@ the result of `p4-coding-system'."
 if there is no setting. The client setting can come from a .perforce
 file or the environment. The values are cached to avoid repeated
 calls to p4. p4 can be 'regularly/sporadically' slow."
-  (let* ((dot-perforce-root (locate-dominating-file default-directory ".perforce"))
+  (let* ((p4config (p4--get-p4-config)) ;; typically .perforce
+         (workspace-root (locate-dominating-file default-directory p4config))
          (key (concat (format "%s : %s" var default)
-                      (if dot-perforce-root (concat " <" dot-perforce-root ".perforce>"))))
+                      (if workspace-root (concat " <" workspace-root p4config ">"))))
          (ans (gethash key p4-current-setting-cache 'missing)))
     (when (equal ans 'missing)
       (setq ans (or (p4-with-set-output
@@ -769,22 +785,40 @@ calls to p4. p4 can be 'regularly/sporadically' slow."
       (puthash key ans p4-current-setting-cache))
     ans))
 
+(defun p4--exists-in-p4-set-vars (var p4-set-vars)
+  "Does VAR=value exist in P4-SET-VARS?"
+  ;; Would be nice to use
+  ;;   (seq-find (lambda (el) (string-match "^P4PORT=" el)) p4-set-vars))
+  ;; instead of p4--exists-in-p4-set-vars ("P4PORT" p4-set-vars)
+  ;; but seq-find isn't in emacs 24.
+  (let (ans
+        (el (car p4-set-vars)))
+    (while el
+      (if (string-match (concat "^" var "=") el)
+          (setq ans t
+                el nil)
+        (setq p4-set-vars (cdr p4-set-vars)
+              el (car p4-set-vars))))
+    ans))
+
 (defun p4-current-environment ()
   "Return `process-environment' updated with the current Perforce
 client settings."
-  (append
-   (p4-with-set-output
-     (cl-loop while (re-search-forward "^P4[A-Z]+=\\S-+" nil t)
-              collect (match-string 0)))
-   ;; Default values for P4PORT and P4USER may be needed by
-   ;; p4-password-source even if not supplied by "p4 set". See:
-   ;; http://www.perforce.com/perforce/doc.current/manuals/cmdref/P4PORT.html
-   ;; http://www.perforce.com/perforce/doc.current/manuals/cmdref/P4USER.html
-   (list
-    "P4PORT=perforce:1666"
-    (concat "P4USER="
-            (or (getenv "USER") (getenv "USERNAME") (user-login-name))))
-   process-environment))
+  (let ((p4-set-vars (p4-with-set-output
+                       (cl-loop while (re-search-forward "^P4[A-Z]+=\\S-+" nil t)
+                                collect (match-string 0)))))
+    ;; Default values for P4PORT and P4USER may be needed by
+    ;; p4-password-source even if not supplied by "p4 set". See:
+    ;; http://www.perforce.com/perforce/doc.current/manuals/cmdref/P4PORT.html
+    ;; http://www.perforce.com/perforce/doc.current/manuals/cmdref/P4USER.html
+    (when (not (p4--exists-in-p4-set-vars "P4PORT" p4-set-vars))
+      (setq p4-set-vars (append p4-set-vars (list "P4PORT=perforce:1666"))))
+    (when (not (p4--exists-in-p4-set-vars "P4PORT" p4-set-vars))
+      (setq p4-set-vars (append p4-set-vars (list (concat "P4USER="
+                                                          (or (getenv "USER")
+                                                              (getenv "USERNAME")
+                                                              (user-login-name)))))))
+    (append p4-set-vars process-environment)))
 
 (defvar p4-coding-system-alist
   ;; I've preferred the IANA name, where possible. See
@@ -857,10 +891,45 @@ exact match."
   (setenv "P4CLIENT" (unless (string-equal value "") value))
   (run-hooks 'p4-set-client-hooks))
 
+(defvar p4--p4config-value-cache nil)
+(defun p4--get-p4-config (&optional force)
+  "Get the value of 'p4 set P4CONFIG'.
+This is typically \".perforce\" and is a file that is placed at
+the Perforce client workspace root. This is a system wide setting
+defined by the environment variable $P4CONFIG, or by
+P4CONFIG=value saved by p4 set P4CONFIG=value in ~/.p4enviro"
+  (when (and (not force)
+             (not p4--p4config-value-cache))
+    (setq p4--p4config-value-cache
+          (with-temp-buffer
+            (if (zerop (save-excursion
+                         (p4-call-process nil t nil "set" "P4CONFIG")))
+                (progn
+                  (goto-char (point-min))
+                  (if (re-search-forward "^P4CONFIG=\\(\\S-+\\)" nil t)
+                      (match-string-no-properties 1)
+                    (if (re-search-forward "\\S-" nil t)
+                        (error "'%s set P4CONFIG' did not return P4CONFIG=value. It returned:\n%s"
+                               (p4-executable) (buffer-string))
+                      (error "'%s set P4CONFIG' did not return P4CONFIG=value.
+To fix:
+  1. Set, in your environment, P4CONFIG=value (e.g. in bash export P4CONFIG=.perforce)
+  2. Run: p4 set P4CONFIG=value (e.g. p4 set P4CONFIG=.perforce)
+"
+                             (p4-executable)))))
+              (error "'%s set P4CONFIG' failed with output\n%s" (p4-executable) (buffer-string))))))
+  p4--p4config-value-cache)
+
 (defun p4-set-p4-config (value)
-  "Set the P4CONFIG environment variable to VALUE."
+  "Set the P4CONFIG environment variable to VALUE.
+P4CONFIG is typically set to the filename '.perforce' and this
+file is placed at the root of your Perforce workspace.  Within
+this file, you place Perforce environment variables, such as
+  P4CLIENT=client_name
+"
   (interactive (list (read-string "P4CONFIG=" (p4-current-setting "P4CONFIG"))))
   (setenv "P4CONFIG" (unless (string-equal value "") value))
+  (p4--get-p4-config t) ;; force reload of the cache to ensure it was set correctly
   (p4-current-setting-clear))
 
 (defun p4-set-p4-port (value)
@@ -870,10 +939,12 @@ exact match."
   (p4-current-setting-clear))
 
 (defun p4-set-default-directory-to-root ()
-  "If in a Perforce workspace as identified by a .perforce file
-set `p4-default-directory' to that location.
+  "If in a Perforce workspace as identified by the P4CONFIG
+file (typically .perforce) set `p4-default-directory' to that
+location.
 "
-  (let ((root (locate-dominating-file default-directory ".perforce")))
+  (let* ((p4config (p4--get-p4-config)) ;; typically .perforce
+         (root (locate-dominating-file default-directory p4config)))
     (when root
       (setq p4-default-directory root))))
 
@@ -1222,9 +1293,10 @@ instead. You can specify a custom error function using `p4-error-handler'."
                       (inhibit-read-only t))
                   (with-selected-window (display-buffer (current-buffer))
                     (goto-char (point-max))
-                    (if (string-match "\\S-" set)
-                        (insert "\n\"p4 set\" shows that you have the following Perforce configuration:\n" set)
-                      (insert "\n\"p4 set\" shows that you have no Perforce configuration.\n"))
+                    (insert (concat "\n\"p4 set\" shows that you have "
+                                    (if (string-match "\\S-" set)
+                                        (concat "the following Perforce configuration:\n" set)
+                                      "have no Perforce configuration.\n")))
                     (goto-char (point-min))))
                 (apply 'message args)))))
     (apply p4-error-handler (list msg))))
@@ -1290,7 +1362,8 @@ and arguments taken from the local variable `p4-process-args'."
 (defun p4-process-buffer-name (args)
   "Return a suitable buffer name for the p4 ARGS command."
   (let* ((args-str (p4-join-list args))
-         (root (locate-dominating-file default-directory ".perforce"))
+         (p4config (p4--get-p4-config)) ;; typically .perforce
+         (root (locate-dominating-file default-directory p4config))
          ;; Add " <root>" postfix if args-str doesn't contain the root, e.g.  p4-filelog will
          ;; contain the root in args-str, whereas p4-changes will not, so we add it.
          (postfix (if (and root
@@ -1397,16 +1470,37 @@ NIL if the form has no value for that key."
   (setq buffer-offer-save t)
   (set-buffer-modified-p nil)
   (setq buffer-undo-list nil)
-  (setq buffer-read-only nil)
-  (when regexp (re-search-forward regexp nil t))
-  (message "C-c C-c to finish editing and exit buffer."))
 
-(cl-defun p4-form-command (cmd &optional args &key move-to commit-cmd
+  (let (buf-read-only)
+    (save-excursion
+      (cond
+
+       ;; Handle P4 change forms
+       ((string-match "^P4 change " (buffer-name))
+
+        ;; If this form is a submitted changelist, make buffer read-only
+        (goto-char (point-min))
+        (when (re-search-forward "^Status: submitted" nil t)
+          (setq buf-read-only t)))
+
+       ;; other type of form
+       (t
+        (message "C-c C-c to finish editing and exit buffer."))))
+
+    (setq buffer-read-only buf-read-only))
+
+  ;; Move to desired location
+  (when regexp (re-search-forward regexp nil t)))
+
+(cl-defun p4-form-command (cmd &optional args
+                               &key move-to
+                               commit-cmd
                                success-callback
                                (failure-callback
                                 'p4-form-commit-failure-callback-default)
                                (mode 'p4-form-mode)
-                               (head-text p4-form-head-text))
+                               (head-text p4-form-head-text)
+                               force-refresh)
   "Maybe start a form-editing session.
 cmd is the p4 command to run \(it must take -o and output a form\).
 args is a list of arguments to pass to the p4 command.
@@ -1421,7 +1515,8 @@ standard input\). If not supplied, cmd is reused.
 :success-callback is a function that is called if the commit succeeds.
 :failure-callback is a function that is called if the commit fails.
 :mode is the mode for the form buffer.
-:head-text is the text to insert at the top of the form buffer."
+:head-text is the text to insert at the top of the form buffer.
+:force-refresh if t refresh the form"
   (unless mode (error "mode"))
   (when (member "-i" args)
     (error "'%s -i' is not supported here." cmd))
@@ -1431,7 +1526,7 @@ standard input\). If not supplied, cmd is reused.
            (buf (get-buffer (p4-process-buffer-name (cons cmd args)))))
       ;; Is there already a form with the same name? If so, just
       ;; switch to it.
-      (if buf
+      (if (and (not force-refresh) buf)
           (select-window (display-buffer buf))
         (let* ((move-to move-to)
                (commit-cmd (or commit-cmd cmd))
@@ -1685,25 +1780,74 @@ twice in the expansion."
                                                        "Describe branch"))))
 
 (defun p4-change-update-form (buffer new-status re)
-  (let ((change (with-current-buffer buffer
-                  (when (re-search-forward re nil t)
-                    (match-string 1)))))
+  "Rename a 'P4 change' buffer if needed
+BUFFER contains the output of 'p4 submit -i' or 'p4 change -i'
+NEW-STATUS is what to set the 'Status: value' to when RE
+to identify the changenum is found in BUFFER.
+Returns t if updated."
+
+  (let (updated
+        (change (with-current-buffer buffer
+                  (save-excursion
+                    (goto-char (point-min))
+                    (when (re-search-forward re nil t)
+                      (match-string 1))))))
     (when change
       (rename-buffer (p4-process-buffer-name (list "change" "-o" change)))
       (save-excursion
         (save-restriction
           (widen)
+          ;; Change: new           ==> Change: CHANGENUM
+          ;; Change: OLD_CHANGENUM ==> Change: NEW_CHANGENUM
           (goto-char (point-min))
-          (when (re-search-forward "^Change:\\s-+\\(new\\)$" nil t)
+          (when (re-search-forward "^Change:\\s-+\\(new\\|[0-9]+\\)$" nil t)
             (replace-match change t t nil 1))
+          ;; Status: new     ==> Change: pending
+          ;; Status: pending ==> Change: submitted
           (goto-char (point-min))
-          (when (re-search-forward "^Status:\\s-+\\(new\\)$" nil t)
+          (when (re-search-forward "^Status:\\s-+\\(new\\|pending\\)$" nil t)
             (replace-match new-status t t nil 1))))
-      (set-buffer-modified-p nil))))
+      (set-buffer-modified-p nil)
+      (setq updated t)
+      )
+    updated ;; result
+    ))
 
 (defun p4-change-success (cmd buffer)
-  (p4-change-update-form buffer "pending" "^Change \\([0-9]+\\) created")
-  (ignore cmd))
+  "Handle successful 'p4 change -i' or 'p4 submit -i'
+BUFFER is the result of 'p4 change -i' or 'p4 submit -i'"
+
+  (cond
+
+   ;; p4 change -i
+   ;;   When a new change is created, it will become pending and be given a changelist number.
+   ;;   Thus, update to be:
+   ;;       Change: new   =>   Change: CHANGENUM
+   ;;       Status: new   =>   Status: pending
+   ;;    and rename the buffer to have the CHANGENUM.
+   ;;    On successful creation of a pending changelist, 'buffer' will contain:
+   ;;       /change \d+ created/
+   ((string= cmd "change")
+    (p4-change-update-form buffer "pending" "^Change \\([0-9]+\\) created"))
+
+   ;; p4 submit -i
+   ;;    When a pending change is submitted, we have
+   ;;       Change: CHANGENUM   =>   Change: NEW_CHANGENUM   (may rename)
+   ;;       Status: pending     =>   Status: submitted
+   ;;    and rename the buffer to have the new CHANGENUM and make readonly (submitted changes
+   ;;    shouldn't be modified).
+   ;;    On successful submission of a pending changelist, 'buffer' will contain:
+   ;;       /^Change \d+ submitted/
+   ;;       /^Change \d+ renamed change \d+ and submitted/
+   ((string= cmd "submit")
+    (when (p4-change-update-form
+           buffer "submitted"
+           "^Change \\(?:[0-9]+ renamed change \\)?\\([0-9]+\\)\\(?: and\\)? submitted")
+      (setq buffer-read-only t)))
+
+   (t
+    (error "assert - unexpected cmd %S" cmd))
+   ))
 
 (defvar p4-change-head-text
   (format "# Created using Perforce-Emacs Integration version %s.
@@ -1714,8 +1858,6 @@ twice in the expansion."
 #\n" p4-version)
   "Text added to top of change form.")
 
-;; @todo: should display pending changes before running this command
-;; and state add args -c CHANGELIST_NUM.
 (defp4cmd p4-change (&rest args)
   "change"
   "Create, edit, submit, or delete a changelist description."
@@ -1726,7 +1868,11 @@ twice in the expansion."
                     (if (thing-at-point 'number)
                         (format "%s" (thing-at-point 'number)))
                     'pending)))
-  (p4-form-command "change" args :move-to "Description:\n\t"
+  ;; Set :force-refresh to t. Consider an existing "P4 change -o CN", then one goes to the
+  ;; "P4 opened" buffer and reverts a file. Running p4-change should refresh the change buffer.
+  (p4-form-command "change" args
+                   :force-refresh t
+                   :move-to "Description:\n\t"
                    :mode 'p4-change-form-mode
                    :head-text p4-change-head-text
                    :success-callback 'p4-change-success))
@@ -1737,7 +1883,7 @@ twice in the expansion."
   :group 'p4)
 
 (defp4cmd* changes ;; (defun p4-changes () ...)
-  "Display list of pending, submitted, or shelved changelists."
+  "Display list of submitted changelists per `p4-changes-default-args'"
   (progn
     (p4-set-default-directory-to-root)
     (p4-make-list-from-string p4-changes-default-args))
@@ -1784,6 +1930,64 @@ twice in the expansion."
   (when (yes-or-no-p "Really delete from depot? ")
     (p4-call-command cmd args :mode 'p4-basic-list-mode
                      :callback (p4-refresh-callback))))
+
+(defun p4-describe-all-files (&rest args)
+  "Show both affected and shelved files in a changelist.
+Only the first line of the changelist description is shown.
+This exists because p4 describe doesn't have the ability to show
+both 'affected' and 'shelved' files in a pending changelist.
+To see all files in a pending changelist, it takes two commands:
+    p4 describe -s CHANGENUM
+    p4 describe -S -s CHANGENUM
+which is what this function does.
+"
+  (interactive
+   (progn
+     (p4-set-default-directory-to-root)
+     (p4-read-args* "Show files in change: "
+                    (if (thing-at-point 'number)
+                        (format "%s" (thing-at-point 'number)))
+                    'pending)))
+  (let ((files-buf (p4-process-buffer-name (cons "describe-all-files" args)))
+        (describe-args `("-s" ,@args))
+        (shelved-files))
+
+    (with-current-buffer (p4-make-output-buffer files-buf 'p4-diff-mode)
+
+      (p4-run (cons "describe" describe-args))
+
+      ;; Since we are interested in showing the files in the changelist, only show the
+      ;; first line of the description.
+
+      (let ((inhibit-read-only t))
+        (goto-char (point-min))
+        (forward-line 3) ;; move past first line of description
+        (let ((start-point (point)))
+          (when (re-search-forward "^Affected files \\.\\.\\." nil t)
+            (beginning-of-line)
+            (delete-region start-point (point))
+            (insert "\n")))
+
+        (with-temp-buffer
+          (setq describe-args `("-S" ,@describe-args))
+          (p4-run (cons "describe" describe-args))
+          (goto-char (point-min))
+          (when (re-search-forward "^Shelved files \\.\\.\\." nil t)
+            (beginning-of-line)
+            (let ((start-point (point)))
+              (forward-line 2)
+              (when (looking-at "^\\.\\.\\. ") ;; have shelved files?
+                (setq shelved-files (buffer-substring start-point (point-max)))))))
+
+        (when shelved-files
+          (goto-char (point-max))
+          (insert shelved-files))
+
+        (p4-activate-diff-buffer)
+
+        (goto-char (point-min))))
+
+    (display-buffer files-buf)))
 
 (defp4cmd p4-describe (&rest args)
   "describe"
@@ -2255,7 +2459,7 @@ where HEAD_REV is highlighted if it is different from REV"
 #       RET: visit-file  'C-c p KEY': run p4 command  'C-c p -': p4-ediff
 ")))
       (p4--opened-internal-move-to-start)
-      
+
       ;; Each line of current buffer should contain
       ;;    //branch/path/to/file.exe#REV OPENED_INFO
       ;; Set opened-files containing "//branch/path/to/file.exe\n" lines
@@ -2308,7 +2512,7 @@ where HEAD_REV is highlighted if it is different from REV"
   (ignore cmd)
   (p4--opened-internal args))
 
-(defp4cmd* print ;; p4-print
+(defp4cmd* print ;; (defun p4-print (&optional args))
   "Write a depot file to a buffer."
   (p4-context-single-filename-revision-args)
   (p4-call-command cmd args :callback 'p4-activate-print-buffer))
@@ -2459,12 +2663,17 @@ return a buffer listing those files. Otherwise, return NIL."
 
 (defun p4-submit-success (cmd buffer)
   (ignore cmd)
-  (p4-change-update-form buffer "submitted" "^Change \\(?:[0-9]+ renamed change \\)?\\([0-9]+\\)\\(?: and\\)? submitted\\.$"))
+  (p4-change-update-form
+   buffer
+   "submitted"
+   "^Change \\(?:[0-9]+ renamed change \\)?\\([0-9]+\\)\\(?: and\\)? submitted\\.$"))
 
 (defun p4-submit-failure (cmd buffer)
   (ignore cmd)
-  (p4-change-update-form buffer "pending"
-                         "^Submit failed -- fix problems above then use 'p4 submit -c \\([0-9]+\\)'\\.$")
+  (p4-change-update-form
+   buffer
+   "pending"
+   "^Submit failed -- fix problems above then use 'p4 submit -c \\([0-9]+\\)'\\.$")
   (with-current-buffer buffer
     (p4-process-show-error "submit -i failed to complete successfully.")))
 
@@ -2773,8 +2982,24 @@ argument DELETE-FILESPEC is non-NIL, remove the first line."
         (add-text-properties start end `(face ,face-property))))))
 
 (defun p4-activate-diff-buffer ()
+  "Activate a p4 diff or p4 describe buffer"
+  ;; Link //branch/path/to/file.ext#REV to the file system
+  (when (or (not (string-match "^P4 describe" (buffer-name))) ;; non p4-describe buffer
+            (save-excursion
+              (goto-char (point-min))
+              (re-search-forward "^Change [^\n]+ \\*pending\\*" nil t)))
+    (save-excursion
+      (save-restriction
+        (goto-char (point-min))
+        ;; In p4 describe -s -s CHANGE_NUM, shelved files should not be linked to the file system
+        ;; To view shelved files, use p4 print //branch/path/to/file@=CHANGENUM
+        (let ((end-point (if (re-search-forward "^Shelved files \\.\\.\\." nil t)
+                             (point)
+                           (point-max))))
+          (narrow-to-region (point-min) end-point)
+          (p4-mark-depot-list-buffer)))))
+
   (save-excursion
-    (p4-mark-depot-list-buffer)
     (p4-find-jobs (point-min) (point-max))
 
     ;; For p4-describe, add help at top
@@ -3607,6 +3832,30 @@ is NIL, otherwise return NIL."
   (when (get-text-property (point) 'active)
     (p4-buffer-commands (point))))
 
+(defun p4--describe-view-depot-file ()
+  "If we are in a P4 describe buffer an one clicked on a depot
+path, view it via p4 print and return t else return nil"
+  (let (ans)
+    (when (string-match "^P4 describe" (buffer-name))
+      (save-excursion
+        (beginning-of-line)
+        (when (looking-at "^\\.\\.\\. \\(//[^ #]+\\)\\(#[0-9]+\\)")
+          (let ((depot-path (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
+                (rev (buffer-substring-no-properties (match-beginning 2) (match-end 2))))
+            ;; For submitted changelists, we p4 print //path/to/file.ext#REV, otherwise
+            ;; we are in a pending changelist "shelved section" and we need to
+            ;; p4 print //path/to/file.ext@=CHANGENUM
+            (if (re-search-backward "^Shelved files \\.\\.\\." nil t)
+                ;; In a pending changelist shelved section
+                (when (re-search-backward "^Change \\([0-9]+\\) by" nil t)
+                  (let ((cn (match-string 1)))
+                    (p4-print (list (concat depot-path "@=" cn)))
+                    (setq ans t)))
+              (p4-print (list (concat depot-path rev)))
+              (setq ans t))))))
+    ;; ans is t if we p4 print'd the item at point
+    ans))
+
 (defun p4-buffer-commands (pnt &optional arg)
   "Function to get a given property and do the appropriate command on it"
   (interactive "d\nP")
@@ -3642,7 +3891,8 @@ is NIL, otherwise return NIL."
           (job (p4-job job))
           (help (p4-help help))
           ((and (not active) (eq major-mode 'p4-diff-mode))
-           (p4-diff-goto-source arg))
+           (if (not (p4--describe-view-depot-file))
+               (p4-diff-goto-source arg)))
 
           ;; Check if a "filename link" or an active "diff buffer area" was
           ;; selected.
@@ -3885,6 +4135,9 @@ is NIL, otherwise return NIL."
 
 (defvar p4-form-font-lock-keywords
   '(("^#.*$" . 'p4-form-comment-face)
+    ("^\\(Status:\\)[ \t]+\\(new\\|pending\\)"
+     (1 'p4-form-keyword-face)
+     (2 'p4-highlight-face))
     ("^[^ \t\n:]+:" . 'p4-form-keyword-face)))
 
 (defvar p4-form-mode-map
@@ -4207,10 +4460,14 @@ file, but a prefix argument reverses this."
   (interactive (list current-prefix-arg last-input-event))
   (if event (posn-set-point (event-end event)))
   (let ((reverse (save-excursion (beginning-of-line) (looking-at "[-<]"))))
-    (let ((location (p4-diff-find-source-location
-                     (diff-xor other-file reverse))))
-      (when location
-        (apply 'p4-depot-find-file location)))))
+    (condition-case nil
+        (let ((location (p4-diff-find-source-location
+                         (diff-xor other-file reverse))))
+          (when location
+            (apply 'p4-depot-find-file location)))
+      ;; If p4-diff-find-source-location has an error ignore it. Consider a p4 describe buffer
+      ;; where "RET" ended up here because p4-diff-goto-source was called by p4-buffer-commands.
+      (error nil))))
 
 
 ;;; Annotate mode:
@@ -4303,4 +4560,4 @@ This is the value of `next-error-function' in P4 Grep buffers."
 ;; LocalWords:  fontification propertize Prev defconst acd defstruct fspec ztag nondirectory caar
 ;; LocalWords:  incf bvariant MVCE nreverse repeat:nil undoc listp noerror assq minibuffer xtext
 ;; LocalWords:  xbinary af posn pnt unshelved engin prev backtab moveto cff noconfirm subst'ed
-;; LocalWords:  subst'd upcase
+;; LocalWords:  subst'd upcase enviro changenum print'd sp
