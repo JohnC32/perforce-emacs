@@ -7,9 +7,6 @@ interfaces that map directly to Perforce commands.
 
 Notes (Feb-2022):
 
-- Contributions are welcome, though it's not clear how much longer I'll be using Perforce so
-  if someone wants to take ownership please do so.
-
 - p4.el compiles without warnings and is known to work with Emacs 24, 25, 26, and 27.
 
 - No known bugs
@@ -19,7 +16,7 @@ Notes (Feb-2022):
 1. Download p4.el and compile it:
 
    #+begin_src bash
-     emacs -Q -batch -f batch-byte-compile /path/to/dir/containing/p4.el
+     emacs -Q -batch -f batch-byte-compile /path/to/dir/containing/p4
    #+end_src
 
 2. In your ~.emacs~ add:
@@ -63,6 +60,7 @@ Use the P4 menu which contains:
    C-c p M-s p4 changes  Show submitted changelists
    C-c p D   p4 describe Display a changelist description
    C-c p C-d p4 describe Display a changelist description with diff's
+   C-c p M-d p4 describe Display all affected and shelved files in a change
    C-c p C   p4 change   Create or edit a changelist description
    C-c p M-s p4 shelve   Store files from a pending changelist into the depot
    C-c p M-u p4 unshelve Restore shelved files from pending change to workspace
