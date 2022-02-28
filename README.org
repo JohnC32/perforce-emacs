@@ -7,9 +7,7 @@ interfaces that map directly to Perforce commands.
 
 Notes (Feb-2022):
 
-- p4.el compiles without warnings and is known to work with Emacs 24, 25, 26, and 27.
-
-- No known bugs
+- p4.el compiles without warnings and is tested with Emacs 24, 25, 26, and 27.
 
 * Installation
 
