@@ -2909,6 +2909,9 @@ change numbers, and make the change numbers clickable."
                                     prop-list)))
           (p4-create-active-link start end prop-list "Visit file"))))))
 
+(defun p4--noop-run-mode-hooks (&rest hooks)
+  (ignore hooks))
+
 (defun p4-fontify-print-buffer (&optional delete-filespec)
   "Fontify a p4-print buffer according to the filename in the
 first line of output from \"p4 print\". If the optional
@@ -2921,7 +2924,18 @@ argument DELETE-FILESPEC is non-NIL, remove the first line."
             (inhibit-read-only t))
         (replace-match "" t t)
         (set-buffer-modified-p nil) ;; set-auto-mode can run hooks which should treat this as an unmodified buffer, e.g. mlint.el
-        (set-auto-mode)
+
+        ;; Consider case where one add a callback to `c++-mode-hook' to activate `lsp-mode' when
+        ;; `buffer-file-name' is t. `p4-fontify-print-buffer' needs to set `buffer-file-name' to the
+        ;; file base name so `set-auto-mode' can determine the mode for the buffer. However, we
+        ;; don't want `set-auto-mode' to call the hook for lsp-mode because the file doesn't exist
+        ;; on disk and if we were to call the hook, an error is produced.
+        (unwind-protect
+            (progn
+              (advice-add 'run-mode-hooks :override #'p4--noop-run-mode-hooks)
+              (set-auto-mode))
+          (advice-remove 'run-mode-hooks #'p4--noop-run-mode-hooks))
+
         ;; Ensure that the entire buffer is fontified, even if jit-lock or lazy-lock is being used.
         ;; If font-lock errors (e.g. bug in the mode definition), ignore it.
         (condition-case nil
@@ -4550,7 +4564,7 @@ This is the value of `next-error-function' in P4 Grep buffers."
 
 ;; LocalWords: el ediff Unshelve defp github Promislow Vaidheeswarran Osterlund Fujii Hironori ESC
 ;; LocalWords:  Filsinger gdr garethrees gmail comint dired ps fontified VC defcustom netbin memq nt
-;; LocalWords:  dn dw dl truename logout cmds filelog jobspec labelsync passwd unshelve Keychain
+;; LocalWords:  dn dw dl truename logout cmds filelog jobspec labelsync passwd unshelve Keychain lsp
 ;; LocalWords:  filespec defface dolist alist Keymap keymap dwim kbd fset defun EDiff defun's diff's
 ;; LocalWords:  infile funcall defmacro zerop clrhash gethash setq puthash IANA euc kr eucjp jp iso
 ;; LocalWords:  koi macosroman macintosh shiftjis jis nobom bom winansi cdr fn repeat:now nosort
@@ -4559,5 +4573,5 @@ This is the value of `next-error-function' in P4 Grep buffers."
 ;; LocalWords:  fontify cgit reviewboard defalias pw filetype sr sync'ing hange isearch plaintext
 ;; LocalWords:  fontification propertize Prev defconst acd defstruct fspec ztag nondirectory caar
 ;; LocalWords:  incf bvariant MVCE nreverse repeat:nil undoc listp noerror assq minibuffer xtext
-;; LocalWords:  xbinary af posn pnt unshelved engin prev backtab moveto cff noconfirm subst'ed
-;; LocalWords:  subst'd upcase enviro changenum print'd sp
+;; LocalWords:  xbinary af posn pnt unshelved engin prev backtab moveto cff noconfirm subst'ed flet
+;; LocalWords:  subst'd upcase enviro changenum print'd sp noop
