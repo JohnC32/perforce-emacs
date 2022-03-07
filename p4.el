@@ -61,7 +61,11 @@
 (require 'comint) ; comint-check-proc
 (require 'dired) ; dired-get-filename
 (require 'diff-mode) ; diff-font-lock-defaults, ...
-(require 'ps-print) ; ps-print-ensure-fontified
+
+;; font-lock-ensure came into existence in Emacs 25
+(condition-case nil
+    (require 'font-lock)
+  (error nil))
 
 (eval-when-compile (require 'cl-lib))
 
@@ -2919,32 +2923,31 @@ argument DELETE-FILESPEC is non-NIL, remove the first line."
   (save-excursion
     (goto-char (point-min))
     (when (looking-at "^//[^#@\n]+/\\([^/#@\n]+\\).*\n")
-      (let ((buffer-file-name (match-string 1))
+      (let ((file-name (match-string 1))
             (first-line (match-string-no-properties 0))
             (inhibit-read-only t))
-        (replace-match "" t t)
-        (set-buffer-modified-p nil) ;; set-auto-mode can run hooks which should treat this as an unmodified buffer, e.g. mlint.el
+
+        (replace-match "" t t) ;; temporarily remove the first "//branch/blah#123" line
 
         ;; Consider case where one add a callback to `c++-mode-hook' to activate `lsp-mode' when
         ;; `buffer-file-name' is t. `p4-fontify-print-buffer' needs to set `buffer-file-name' to the
         ;; file base name so `set-auto-mode' can determine the mode for the buffer. However, we
         ;; don't want `set-auto-mode' to call the hook for lsp-mode because the file doesn't exist
         ;; on disk and if we were to call the hook, an error is produced.
-        (unwind-protect
-            (progn
-              (advice-add 'run-mode-hooks :override #'p4--noop-run-mode-hooks)
-              (set-auto-mode))
-          (advice-remove 'run-mode-hooks #'p4--noop-run-mode-hooks))
+        ;;
+        ;; Another case is matlab-mode's mlint.el which has a hook to lint the contents of the
+        ;; buffer which is assumed to be on disk if buffer-file-name is non-nil.
+        ;;
+        ;; cl-letf: http://endlessparentheses.com/understanding-letf-and-how-it-replaces-flet.html
+        (cl-letf (((symbol-function 'run-mode-hooks) #'p4--noop-run-mode-hooks))
+          (let ((buffer-file-name file-name))
+            (set-auto-mode)
+            (when (fboundp 'font-lock-ensure) ;; emacs 25 or later?
+              (font-lock-ensure (point-min) (point-max)))))
 
-        ;; Ensure that the entire buffer is fontified, even if jit-lock or lazy-lock is being used.
-        ;; If font-lock errors (e.g. bug in the mode definition), ignore it.
-        (condition-case nil
-            (ps-print-ensure-fontified (point-min) (point-max))
-          (error nil))
-        ;; But then turn off the major mode, freezing the fontification so that
-        ;; when we add contents to the buffer (such as restoring the first line
-        ;; containing the filespec, or adding annotations) these additions
-        ;; don't get fontified.
+        ;; Now turn off the major mode, freezing the fontification so that when we add contents to
+        ;; the buffer (such as restoring the first line containing the filespec, or adding
+        ;; annotations) these additions don't get fontified.
         (remove-hook 'change-major-mode-hook 'font-lock-change-mode t)
         (fundamental-mode)
         (goto-char (point-min))
