@@ -218,7 +218,7 @@ and should return the //branch/name port if possible or nil."
 
 (defgroup p4-faces nil "Perforce VC System Faces." :group 'p4)
 
-(defface p4-description-face '((t))
+(defface p4-description-face '((t (:inherit font-lock-doc-face)))
   "Face used for change descriptions."
   :group 'p4-faces)
 
@@ -2850,9 +2850,19 @@ Specify NO-PROMPT as t when caller is going to re-prompt."
                                        "Show diff"))
         (p4-create-active-link-group user-match `(user ,user) "Describe user")
         (p4-create-active-link-group cl-match `(client ,client) "Describe client")
-        (add-text-properties (match-beginning desc-match)
-                             (match-end desc-match)
-                             '(invisible t isearch-open-invisible t))))
+        (let ((desc-start-point (match-beginning desc-match))
+              (desc-end-point (match-end desc-match)))
+          (save-excursion
+            (goto-char desc-start-point)
+            (when (looking-at "^[ \t]*$")
+              (forward-line)
+              (add-text-properties desc-start-point (point)
+                                   '(invisible t isearch-open-invisible t)))
+            ;; keep first description line
+            (forward-line)
+            (when (< (point) desc-end-point)
+              (add-text-properties (point) desc-end-point
+                                   '(invisible t isearch-open-invisible t)))))))
     (p4-find-change-numbers (point-min) (point-max))
     (goto-char (point-min))
     (insert p4-filelog-mode-head-text)
