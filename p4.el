@@ -420,6 +420,7 @@ commit command.")
     (define-key map "z"         'p4-reconcile)
     (define-key map "="         'p4-diff)
     (define-key map (kbd "C-=") 'p4-diff-all-opened)
+    (define-key map (kbd "M-=") 'p4-diff-all-opened-side-by-side)
     (define-key map "-"         'p4-ediff)
     (define-key map "`"         'p4-ediff-with-head)
     (define-key map "_"         'p4-ediff2)
@@ -511,6 +512,8 @@ Ediff file with head version"]
       :help "M-x p4-diff2"]
      ["Diff all opened files" p4-diff-all-opened
       :help "M-x p4-diff-all-opened"]
+     ["Diff all opened files side-by-side" p4-diff-all-opened-side-by-side
+      :help "M-x p4-diff-all-opened-side-by-side"]
      )
     ["--" nil nil]
     ("Changes"
@@ -2027,8 +2030,23 @@ such as that created by `p4-describe' and similar functions"
                    :callback 'p4-activate-diff-buffer))
 
 (defun p4-diff-all-opened ()
+  "View unified diff all opened files"
   (interactive)
   (p4-diff (list p4-default-diff-options)))
+
+(defun p4-activate-diff-side-by-side-buffer ()
+  "Activate side-by-side unifified diff"
+  (p4-activate-diff-buffer)
+  (if (fboundp 'diffview-current)
+      (diffview-current)
+    (message "Install https://github.com/mgalgs/diffview-mode to view unified diff side-by-side")))
+   
+(defun p4-diff-all-opened-side-by-side ()
+  "View unified diff of all opened files side-by-side"
+  (interactive)
+  (p4-call-command "diff" (list p4-default-diff-options)
+                   :mode 'p4-diff-mode
+                   :callback 'p4-activate-diff-side-by-side-buffer))
 
 (defun p4-get-file-rev (rev)
   "Return the full filespec corresponding to revision REV, using
