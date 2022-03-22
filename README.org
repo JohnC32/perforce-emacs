@@ -49,8 +49,10 @@ Use the P4 menu or keybindings:
    C-c p =   p4 diff     Diff of client file with depot file
    C-c p d   p4 diff2    Diff a set of depot files to another
    C-c p C-= p4 diff     Diff all p4 opened files
-                         N: next file, P: prev file, RET: visit region in file
+                         }: next file, {: prev file, RET: visit region in file
                          n: next diff, p: prev diff
+   C-c p M-= p4 diff     Diff all p4 opened files side-by-side
+                         }: next file, {: prev file
  Changes
    C-c p o   p4 opened   List open files and display file status
    C-c p C-p p4 changes  Show pending changelists
