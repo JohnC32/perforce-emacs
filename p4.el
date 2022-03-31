@@ -2592,28 +2592,10 @@ changelist."
   "\\(?:==== .* ====\\|--- .*\n\\+\\+\\+ .*\\)\n\\'"
   "Regular expression matching p4 diff output when there are no changes.")
 
-(defp4cmd* revert ;; p4-revert
+(defp4cmd* revert ;; (defun p4-revert (&optional ARGS-ORIG))
   "Discard changes from an opened file."
   (p4-context-filenames-list)
   (let ((prompt (not p4-prompt-before-running-cmd)))
-    (unless args-orig
-      (let* ((diff-args
-              (append (cons "diff" (p4-make-list-from-string p4-default-diff-options)) args))
-             (inhibit-read-only t))
-        (with-current-buffer
-            (p4-make-output-buffer (p4-process-buffer-name diff-args)
-                                   'p4-diff-mode)
-          (p4-run diff-args)
-          (cond ((looking-at ".* - file(s) not opened on this client")
-                 (p4-process-show-error))
-                ((looking-at ".* - file(s) not opened for edit")
-                 (kill-buffer (current-buffer)))
-                ((looking-at p4-empty-diff-regexp)
-                 (kill-buffer (current-buffer))
-                 (setq prompt nil))
-                (t
-                 (p4-activate-diff-buffer)
-                 (display-buffer (current-buffer)))))))
     (when (or (not prompt) (yes-or-no-p "Really revert? "))
       (p4-call-command cmd args :mode 'p4-basic-list-mode
                        :callback (p4-refresh-callback)))))
