@@ -1859,6 +1859,7 @@ BUFFER is the result of 'p4 change -i' or 'p4 submit -i'"
 (defvar p4-change-head-text
   (format "# Created using Perforce-Emacs Integration version %s.
 # Type C-c C-c to update the change description on the server.
+# Type C-c C-r to refresh the change form by fetching contents from the server.
 # Type C-c C-s to submit the change to the server.
 # Type C-c C-d to delete the change.
 # Type C-x k to cancel the operation.
@@ -2040,7 +2041,7 @@ such as that created by `p4-describe' and similar functions"
   (if (fboundp 'diffview-current)
       (diffview-current)
     (message "Install https://github.com/mgalgs/diffview-mode to view unified diff side-by-side")))
-   
+
 (defun p4-diff-all-opened-side-by-side ()
   "View unified diff of all opened files side-by-side"
   (interactive)
@@ -4202,15 +4203,45 @@ a terminal"
 
 (defvar p4-change-form-mode-map
   (let ((map (p4-make-derived-map p4-form-mode-map)))
-    (define-key map "\C-c\C-s" 'p4-change-form-submit)
-    (define-key map "\C-c\C-p" 'p4-change-form-update)
-    (define-key map "\C-c\C-d" 'p4-change-form-delete)
+    (define-key map "\C-c\C-r" 'p4--change-form-refresh)
+    (define-key map "\C-c\C-s" 'p4--change-form-submit)
+    (define-key map "\C-c\C-p" 'p4--change-form-update)
+    (define-key map "\C-c\C-d" 'p4--change-form-delete)
     map)
   "Keymap for P4 change form mode.")
 
 (define-derived-mode p4-change-form-mode p4-form-mode "P4 Change")
 
-(defun p4-change-form-delete ()
+(defun p4--change-form-refresh()
+  "Refresh the change form by fetching contents from the server"
+  (interactive)
+  (save-excursion
+    (save-restriction
+      (widen)
+      ;; Change: NUM
+      (goto-char (point-min))
+      (if (re-search-forward "^Change:\\s-+\\(new\\|[0-9]+\\)$" nil t)
+          (let ((cn (match-string 1)))
+            (when (string= cn "new")
+              (user-error "Cannot refresh a new pending changelist"))
+            (p4-change cn))
+        ;; shouldn't be able to get here
+        (error "Unable to locate 'Change: NUM'"))
+      )))
+
+(defun p4--change-form-submit ()
+  "Submit the change in the current buffer to the server."
+  (interactive)
+  (let ((p4-form-commit-command "submit"))
+    (p4-form-commit)))
+
+(defun p4--change-form-update ()
+  "Update the changelist description on the server."
+  (interactive)
+  (let ((p4-form-commit-command "change"))
+    (p4-form-commit)))
+
+(defun p4--change-form-delete ()
   "Delete the change in the current buffer."
   (interactive)
   (let ((change (p4-form-value "Change")))
@@ -4219,18 +4250,6 @@ a terminal"
       (p4-change "-d" change)
       (p4-partial-cache-cleanup 'pending)
       (p4-partial-cache-cleanup 'shelved))))
-
-(defun p4-change-form-submit ()
-  "Submit the change in the current buffer to the server."
-  (interactive)
-  (let ((p4-form-commit-command "submit"))
-    (p4-form-commit)))
-
-(defun p4-change-form-update ()
-  "Update the changelist description on the server."
-  (interactive)
-  (let ((p4-form-commit-command "change"))
-    (p4-form-commit)))
 
 
 ;;; Job form mode::
