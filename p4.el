@@ -104,13 +104,13 @@
 (defcustom p4-default-diff-options "-du"
   "Options to pass to `p4-diff', `p4-diff2', and `p4-resolve'.
 Set to:
--dn     (RCS)
--dc[n]  (context; optional argument specifies number of context lines)
--ds     (summary)
--du[n]  (unified; optional argument specifies number of context lines)
--db     (ignore whitespace changes)
--dw     (ignore whitespace)
--dl     (ignore line endings)"
+-du[n]  Unified output format, optional [n] is number of context lines
+-dn     RCS output format (not recommended in Emacs)
+-ds     Summary output format (not recommened in Emacs)
+-dc[n]  Context output format, optional [n] is number of context lines (not recommended in Emacs)
+-dw     Ignore whitespace altogether, implies -dl
+-db     Ignore changes made within whitespace, implies -dl
+-dl     Ignore line endings"
   :type 'string
   :group 'p4)
 
@@ -2030,10 +2030,28 @@ such as that created by `p4-describe' and similar functions"
   (p4-call-command cmd args :mode 'p4-diff-mode
                    :callback 'p4-activate-diff-buffer))
 
+(defun p4--get-diff-options ()
+  "Get p4 diff options
+-du or -duN is required because Emacs works best when diff'ing unified diffs.
+See `p4-default-diff-options` or `p4-help` diff for options."
+  (let (ok
+        options)
+    (while (not ok)
+      (setq options (p4-read-args "p4 diff options (e.g. '-du -dw' to ignore whitespace): "
+                                  p4-default-diff-options))
+      (dolist (opt options)
+        (when (string-match "^-du[0-9]*$" opt)
+          (setq ok t)))
+      (when (not ok)
+        (message "-du or -duN (unified diff option) is required")
+        (sit-for 3)))
+    ;; answer
+    options))
+
 (defun p4-diff-all-opened ()
   "View unified diff all opened files"
   (interactive)
-  (p4-diff (list p4-default-diff-options)))
+  (p4-diff (p4--get-diff-options)))
 
 (defun p4-activate-diff-side-by-side-buffer ()
   "Activate side-by-side unifified diff"
@@ -2045,7 +2063,7 @@ such as that created by `p4-describe' and similar functions"
 (defun p4-diff-all-opened-side-by-side ()
   "View unified diff of all opened files side-by-side"
   (interactive)
-  (p4-call-command "diff" (list p4-default-diff-options)
+  (p4-call-command "diff" (p4--get-diff-options)
                    :mode 'p4-diff-mode
                    :callback 'p4-activate-diff-side-by-side-buffer))
 
