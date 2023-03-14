@@ -5,9 +5,9 @@
 Integration of the [[http://www.perforce.com/][Perforce]] software version management system into [[http://www.gnu.org/software/emacs/][GNU Emacs]]. p4.el provides Emacs
 interfaces that map directly to Perforce commands.
 
-Notes (Feb-2022):
+Notes (Mar-2023):
 
-- p4.el compiles without warnings and is tested with Emacs 24, 25, 26, and 27.
+- p4.el compiles without warnings and is tested with Emacs 26, 27, and 28.
 
 * Installation
 
