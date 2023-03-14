@@ -6,7 +6,7 @@
 ;; Copyright (c) 2009      Fujii Hironori
 ;; Copyright (c) 2012      Jason Filsinger
 ;; Copyright (c) 2013-2015 Gareth Rees <gdr@garethrees.org>
-;; Copyright (c) 2015-2022 John Ciolfi
+;; Copyright (c) 2015-2023 John Ciolfi
 
 ;; Version: 14.0
 ;;   This version started with the 2015 Version 12.0 from Gareth Rees <gdr@garethrees.org>
@@ -17,7 +17,7 @@
 ;;   interactions can be slow and this slowed Emacs. Now all interactions with Perforce are explicit
 ;;   and invoked from a P4 menu selection or keybinding. This means that Emacs will be performant
 ;;   even if the Perforce server is slow or not responding. By default, most commands prompt you to
-;;   run the action requests, thus enable you to provide additional switches.
+;;   run the action requests, which lets you provide additional switches if desired.
 
 ;;; Commentary:
 
@@ -102,15 +102,21 @@
   :group 'p4)
 
 (defcustom p4-default-diff-options "-du"
-  "Options to pass to `p4-diff', `p4-diff2', and `p4-resolve'.
+  "Options to pass to `p4-diff', `p4-diff2'.
 Set to:
 -du[n]  Unified output format, optional [n] is number of context lines
 -dn     RCS output format (not recommended in Emacs)
--ds     Summary output format (not recommened in Emacs)
--dc[n]  Context output format, optional [n] is number of context lines (not recommended in Emacs)
+-ds     Summary output format (not recommended in Emacs)
+-dc[n]  Context output format, optional [n] is number of context lines
+        (not recommended in Emacs)
 -dw     Ignore whitespace altogether, implies -dl
 -db     Ignore changes made within whitespace, implies -dl
 -dl     Ignore line endings"
+  :type 'string
+  :group 'p4)
+
+(defcustom p4-default-resolve-options "..."
+  "Options to pass to `p4-resolve'"
   :type 'string
   :group 'p4)
 
@@ -464,12 +470,8 @@ p4 command."
 
 ;;; Menu:
 
-(defvar p4-menu-spec
-  `(,@(if (not p4-prompt-before-running-cmd)
-          ;; Specify arguments (prompt), C-u only present if not activated all the time
-          '(["Specify Arguments..." universal-argument t]
-            ["--" nil nil])
-        '())
+(easy-menu-define p4-menu nil "Perforce"
+  `("P4"
     ["Add" p4-add
      :help "M-x p4-add
 Open a new file to add it to the depot"]
@@ -666,22 +668,17 @@ Display the Perforce-Emacs package, p4.el, version"]
     ["Help" p4-help
      :help "M-x p4-help
 Run p4 help CMD"]
-    )
-  "The P4 menu definition")
+    ))
 
 (defcustom p4-after-menu 'tools
   "Top-level menu to place P4 after."
   :type 'symbol
   :group 'p4)
 
-;; Put after desired menu
-(define-key-after global-map [menu-bar P4]
-  (cons "P4" (make-sparse-keymap "P4"))
+;; Put P4 menu after the desired menu
+(define-key-after (lookup-key global-map [menu-bar]) [p4-menu]
+  (cons "P4" p4-menu)
   p4-after-menu)
-(push "P4" p4-menu-spec)
-(easy-menu-define p4-menu global-map
-  "Perforce"
-  p4-menu-spec)
 
 ;;; Running Perforce (defun's required for macros)
 
@@ -1999,7 +1996,8 @@ which is what this function does.
 
 (defp4cmd p4-describe (&rest args)
   "describe"
-  "Display a changelist description using p4 describe with `p4-default-describe-options'"
+  "Display a changelist description using p4 describe with
+`p4-default-describe-options'"
   (interactive (p4-read-args "p4 describe: "
                              (concat p4-default-describe-options " "
                                      (if (thing-at-point 'number)
@@ -2054,7 +2052,7 @@ See `p4-default-diff-options` or `p4-help` diff for options."
   (p4-diff (p4--get-diff-options)))
 
 (defun p4-activate-diff-side-by-side-buffer ()
-  "Activate side-by-side unifified diff"
+  "Activate side-by-side unified diff"
   (p4-activate-diff-buffer)
   (if (fboundp 'diffview-current)
       (diffview-current)
@@ -2113,7 +2111,8 @@ buffer and the P4 output buffer."
           (ediff-buffers depot-buffer orig-buffer))))))
 
 (defun p4--get-file-to-diff ()
-  "To support p4-ediff and friends on a p4-opened buffer, we need to switch to the file to diff"
+  "To support p4-ediff and friends on a p4-opened buffer, we need
+to switch to the file to diff"
   (let ((file (p4-context-single-filename)))
     (when (not (buffer-file-name))
       (setq file (p4-depot-find-file file)))
@@ -2426,12 +2425,14 @@ followed by \"delete\"."
 
 (defalias 'p4-rename 'p4-move)
 
-(defun p4--opened-get-head-rev (opened-files)
-  "Used by p4-opened to run p4 fstat and return a hash of depotFiles to head-rev's"
+(defun p4--opened-get-info (opened-files)
+  "Used by p4-opened to run p4 fstat and return a hash of depotFiles to
+(cons head-rev is-unresolved)"
   (let ((x-file (make-temp-file "p4-x-file-opened-" nil ".txt"))
-        (head-rev-table (make-hash-table :test 'equal))
+        (opened-info-table (make-hash-table :test 'equal))
         depotFile
         headRev
+        is-unresolved
         bad-content)
 
     (with-temp-file x-file
@@ -2446,7 +2447,7 @@ followed by \"delete\"."
     ;;  <newline>      // no headRev when file is a p4 add, delete, dest of move
 
     (with-temp-buffer
-      (p4-run (list "-x" x-file "fstat" "-T" "depotFile, headRev"))
+      (p4-run (list "-x" x-file "fstat" "-T" "depotFile, headRev, unresolved"))
       (goto-char (point-min))
       (while (and (not (eobp))
                   (not bad-content))
@@ -2454,24 +2455,29 @@ followed by \"delete\"."
             (progn
               (setq depotFile
                     (buffer-substring-no-properties (match-beginning 1) (match-end 1))
-                    headRev nil)
+                    headRev nil
+                    is-unresolved nil)
               (forward-line)
               (when (looking-at "^\\.\\.\\. headRev \\([0-9]+\\)")
                 (setq headRev
                       (buffer-substring-no-properties (match-beginning 1) (match-end 1)))
                 (forward-line))
+              (when (looking-at "^\\.\\.\\. unresolved")
+                (setq is-unresolved t)
+                (forward-line))
               (if (looking-at "^$")
                   (progn
                     (when headRev
-                      (puthash depotFile headRev head-rev-table))
+                      (puthash depotFile (cons headRev is-unresolved) opened-info-table))
                     (forward-line))
+                ;; unexpected content from p4 fstat
                 (setq bad-content t)))
           (setq bad-content t))))
 
     (when bad-content
-      (setq head-rev-table nil))
+      (setq opened-info-table nil))
     ;; answer
-    head-rev-table))
+    opened-info-table))
 
 (defun p4--opened-internal-move-to-start ()
   "Locate first non-comment line in 'P4 opened' buffer"
@@ -2506,7 +2512,7 @@ where HEAD_REV is highlighted if it is different from REV"
       ;; Set opened-files containing "//branch/path/to/file.exe\n" lines
       (let (opened-files
             bad-content ;; bad content occurs when p4 opened was invoked outside of a workspace
-            head-rev-table)
+            opened-info-table)
         (while (and (not (eobp))
                     (not bad-content))
           (if (looking-at "^\\(//[^ #]+\\)")
@@ -2519,9 +2525,9 @@ where HEAD_REV is highlighted if it is different from REV"
 
         (when (not bad-content)
           ;; p4 opened content is good, now run p4 fstat and load
-          ;; head-rev-table with KEY = depotFile, VALUE = headRev.
-          (setq head-rev-table (p4--opened-get-head-rev opened-files))
-          (when head-rev-table
+          ;; opened-info-table with KEY = depotFile, VALUE = (cons headRev is-unresolved)
+          (setq opened-info-table (p4--opened-get-info opened-files))
+          (when opened-info-table
             ;; Augment the p4 opened lines with the headRev's
             (let ((inhibit-read-only t))
               (p4--opened-internal-move-to-start)
@@ -2532,14 +2538,15 @@ where HEAD_REV is highlighted if it is different from REV"
                                        (match-beginning 1) (match-end 1)))
                            (haveRev (buffer-substring-no-properties
                                      (match-beginning 2) (match-end 2)))
-                           (headRev (gethash depotFile head-rev-table)))
+                           (opened-info (gethash depotFile opened-info-table))
+                           (headRev (car opened-info))
+                           (is-unresolved (cdr opened-info)))
                       (when headRev
                         (move-end-of-line 1)
-                        (let ((headRevTxt (concat (if (string= haveRev headRev)
-                                                      "; head#"
-                                                    "; HEAD#")
-                                                  headRev)))
-                          (insert headRevTxt)))
+                        (let ((opened-info-text
+                               (concat (if (string= haveRev headRev) "; head#" "; HEAD#") headRev
+                                       (when is-unresolved "; NEEDS-RESOLVE"))))
+                          (insert opened-info-text)))
                       (forward-line))
                   (setq bad-content t)))))))
       (p4--opened-internal-move-to-start))
@@ -2590,7 +2597,7 @@ changelist."
 
 (defp4cmd* resolve ;; p4-resolve
   "Resolve integrations and updates to workspace files."
-  (list (concat p4-default-diff-options " "))
+  (list (concat p4-default-resolve-options " "))
   (let (buffer (buf-name "P4 resolve"))
     (setq buffer (get-buffer buf-name))
     (if (and (buffer-live-p buffer)
@@ -2604,8 +2611,8 @@ changelist."
     (let ((process-environment (cons "P4PAGER=" process-environment)))
       (p4-ensure-logged-in)
       (setq buffer (apply #'p4-make-comint "P4 resolve" nil args)))
-    (with-selected-window (display-buffer buffer)
-      (goto-char (point-max)))))
+    (switch-to-buffer-other-window buffer)
+    (goto-char (point-max))))
 
 (defvar p4-empty-diff-regexp
   "\\(?:==== .* ====\\|--- .*\n\\+\\+\\+ .*\\)\n\\'"
@@ -3729,7 +3736,8 @@ is NIL, otherwise return NIL."
     (when completion (setf (p4-completion-cache completion) nil))))
 
 (defun p4--modify-prompt-with-dir (prompt)
-  "If `p4-default-directory' is not same as `default-directory' modify prompt with it"
+  "If `p4-default-directory' is not same as `default-directory'
+modify prompt with it"
   (when (and p4-default-directory
              (not (string= p4-default-directory default-directory)))
     (setq prompt (concat (format "In %s\n" p4-default-directory) prompt)))
@@ -4049,6 +4057,8 @@ path, view it via p4 print and return t else return nil"
     ;; //branch/path/to/file.ext#1 - was edit, reverted
     ("^\\(//.*#[1-9][0-9]*\\)" 1 'p4-link-face)
     ("\\(HEAD#[0-9]+\\)"
+     1 'font-lock-warning-face prepend)
+    ("\\(NEEDS-RESOLVE\\)"
      1 'font-lock-warning-face prepend)
     ("\\(^#[^\n]+\\)"
      1 'p4-form-comment-face
@@ -4624,4 +4634,4 @@ This is the value of `next-error-function' in P4 Grep buffers."
 ;; LocalWords:  fontification propertize Prev defconst acd defstruct fspec ztag nondirectory caar
 ;; LocalWords:  incf bvariant MVCE nreverse repeat:nil undoc listp noerror assq minibuffer xtext
 ;; LocalWords:  xbinary af posn pnt unshelved engin prev backtab moveto cff noconfirm subst'ed flet
-;; LocalWords:  subst'd upcase enviro changenum print'd sp noop
+;; LocalWords:  subst'd upcase enviro changenum print'd sp noop Rees diff'ing fboundp diffview letf
