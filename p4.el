@@ -782,9 +782,9 @@ calls to p4. p4 can be 'regularly/sporadically' slow."
          (ans (gethash key p4-current-setting-cache 'missing)))
     (when (equal ans 'missing)
       (setq ans (or (p4-with-set-output
-                      (let ((re (format "^%s=\\(\\S-+\\)" (regexp-quote var))))
-                        (when (re-search-forward re nil t)
-                          (match-string 1))))
+                     (let ((re (format "^%s=\\(\\S-+\\)" (regexp-quote var))))
+                       (when (re-search-forward re nil t)
+                         (match-string 1))))
                     default))
       (puthash key ans p4-current-setting-cache))
     ans))
@@ -809,8 +809,8 @@ calls to p4. p4 can be 'regularly/sporadically' slow."
   "Return `process-environment' updated with the current Perforce
 client settings."
   (let ((p4-set-vars (p4-with-set-output
-                       (cl-loop while (re-search-forward "^P4[A-Z]+=\\S-+" nil t)
-                                collect (match-string 0)))))
+                      (cl-loop while (re-search-forward "^P4[A-Z]+=\\S-+" nil t)
+                               collect (match-string 0)))))
     ;; Default values for P4PORT and P4USER may be needed by
     ;; p4-password-source even if not supplied by "p4 set". See:
     ;; http://www.perforce.com/perforce/doc.current/manuals/cmdref/P4PORT.html
@@ -1199,8 +1199,8 @@ connect to the server.")
   (with-temp-buffer
     (insert "yes\n")
     (p4-with-coding-system
-      (p4-call-process-region (point-min) (point-max)
-                              t t nil "trust" "-f"))))
+     (p4-call-process-region (point-min) (point-max)
+                             t t nil "trust" "-f"))))
 
 (defun p4-iterate-with-login (fun)
   "Call FUN in the current buffer and return its result.
@@ -1230,8 +1230,8 @@ and repeat."
 (defun p4-ensure-logged-in ()
   "Ensure that user is logged in, prompting for password if necessary."
   (p4-with-temp-buffer '("login" "-s")
-    ;; Dummy body avoids byte-compilation warning.
-    'logged-in))
+                       ;; Dummy body avoids byte-compilation warning.
+                       'logged-in))
 
 (defun p4-run (args)
   "Run p4 ARGS in the current buffer, with output after point.
@@ -1241,7 +1241,7 @@ re-run the command."
   (p4-iterate-with-login
    (lambda ()
      (p4-with-coding-system
-       (apply #'p4-call-process nil t nil args)))))
+      (apply #'p4-call-process nil t nil args)))))
 
 (defun p4-refresh-callback (&optional hook)
   "Return a callback function that refreshes the current buffer
@@ -1293,7 +1293,7 @@ instead. You can specify a custom error function using `p4-error-handler'."
                   message))
                (t
                 (let ((set (p4-with-set-output
-                             (buffer-substring (point-min) (point-max))))
+                            (buffer-substring (point-min) (point-max))))
                       (inhibit-read-only t))
                   (with-selected-window (display-buffer (current-buffer))
                     (goto-char (point-max))
@@ -1347,11 +1347,11 @@ and arguments taken from the local variable `p4-process-args'."
     (erase-buffer)
     (if p4-process-synchronous
         (p4-with-coding-system
-          (let ((status (apply #'p4-call-process nil t nil
-                               p4-process-args)))
-            (p4-process-finished (current-buffer) "P4"
-                                 (if (zerop status) "finished\n"
-                                   (format "exited with status %d\n" status)))))
+         (let ((status (apply #'p4-call-process nil t nil
+                              p4-process-args)))
+           (p4-process-finished (current-buffer) "P4"
+                                (if (zerop status) "finished\n"
+                                  (format "exited with status %d\n" status)))))
       (let ((process (apply #'p4-start-process "P4" (current-buffer)
                             p4-process-args)))
         (set-process-query-on-exit-flag process nil)
@@ -1403,7 +1403,9 @@ In Windows Command Prompt, type 'subst /?' to see subst'ed drives."
           ;;   X:\: => L:\work
           ;;   Y:\: => L:\
           (when (string-match (concat drive "\\\\: => \\([A-Z]:\\\\[^\n\r]*\\)") subst-drives)
-            (setq true-file (match-string 1 subst-drives)))
+            (setq true-file (concat
+                             (replace-regexp-in-string "\\\\" "/" (match-string 1 subst-drives))
+                             (substring true-file 2))))
           )))
     (when (not (string= true-file file))
       (find-alternate-file true-file))))
@@ -1423,8 +1425,10 @@ If :synchronous is non-NIL, or command appears in
 If :pop-up-output is non-NIL, call that function to determine
 whether or not to pop up the output of a command in a window (as
 opposed to showing it in the echo area)."
-  (when p4-follow-symlinks
-    (p4-refresh-buffer-with-true-path))
+
+  ;; Don't call `p4-refresh-buffer-with-true-path' here because args will contain the original file
+  ;; path. For example M-x p4-edit RET /path/to/file.ext RET will result in args containing
+  ;; /path/to/file.ext.
   (with-current-buffer
       (p4-make-output-buffer (p4-process-buffer-name (cons cmd args)) mode)
     (let ((default-directory (file-truename default-directory)))
@@ -1563,9 +1567,9 @@ standard input\). If not supplied, cmd is reused.
                    (save-restriction
                      (widen)
                      (p4-with-coding-system
-                       (apply #'p4-call-process-region (point-min)
-                              (point-max)
-                              nil buffer nil cmd args))))))))
+                      (apply #'p4-call-process-region (point-min)
+                             (point-max)
+                             nil buffer nil cmd args))))))))
            (setq mode-name "P4 Form Committed")
            (when p4-form-commit-success-callback
              (funcall p4-form-commit-success-callback cmd buffer))
@@ -2386,8 +2390,8 @@ continuation lines); show it in a pop-up window otherwise."
               (insert (read-passwd (format prompt (p4-current-server-port))) "\n"))
           (setq first-iteration nil)
           (p4-with-coding-system
-            (apply #'p4-call-process-region (point-min) (point-max)
-                   t t nil cmd "-a" args))
+           (apply #'p4-call-process-region (point-min) (point-max)
+                  t t nil cmd "-a" args))
           (goto-char (point-min))
           (when (re-search-forward "Enter password:.*\n" nil t)
             (replace-match ""))
@@ -2724,8 +2728,8 @@ return a buffer listing those files. Otherwise, return NIL."
          ((or p4-prompt-before-running-cmd current-prefix-arg)
           (list (p4-read-args "Run p4 change (with args): " "" 'pending)))))
   (p4-with-temp-buffer (list "-s" "opened")
-    (unless (re-search-forward "^info: " nil t)
-      (error "Files not opened on this client.")))
+                       (unless (re-search-forward "^info: " nil t)
+                         (error "Files not opened on this client.")))
   (save-some-buffers)
   (let ((empty-buf (and p4-check-empty-diffs (p4-empty-diff-buffer))))
     (when (or (not empty-buf)
@@ -3218,56 +3222,59 @@ first)."
         current-file    ; current filename in filelog
         (args (list "filelog" "-l" "-i" filespec)))
     (message "Running: p4 %s" (p4-join-list args))
-    (p4-with-temp-buffer args
-      (while (not (eobp))
-        (cond ((looking-at "^//.*$")
-               (setq current-file (match-string 0)))
-              ((looking-at p4-blame-change-regex)
-               (let ((op (match-string 3))
-                     (revision (string-to-number (match-string 1)))
-                     (change (string-to-number (match-string 2))))
-                 (if (string= op "delete")
-                     (unless head-seen (goto-char (point-max)))
-                   (push (cons change
-                               (make-p4-file-revision
-                                :filespec (format "%s#%d" current-file revision)
-                                :filename current-file
-                                :revision revision
-                                :change change
-                                :date (match-string 4)
-                                :user (match-string 5)
-                                :description (match-string 6)))
-                         change-alist)
-                   (setq head-seen t)))))
-        (forward-line))
-      change-alist)))
+    (p4-with-temp-buffer
+     args
+     (while (not (eobp))
+       (cond ((looking-at "^//.*$")
+              (setq current-file (match-string 0)))
+             ((looking-at p4-blame-change-regex)
+              (let ((op (match-string 3))
+                    (revision (string-to-number (match-string 1)))
+                    (change (string-to-number (match-string 2))))
+                (if (string= op "delete")
+                    (unless head-seen (goto-char (point-max)))
+                  (push (cons change
+                              (make-p4-file-revision
+                               :filespec (format "%s#%d" current-file revision)
+                               :filename current-file
+                               :revision revision
+                               :change change
+                               :date (match-string 4)
+                               :user (match-string 5)
+                               :description (match-string 6)))
+                        change-alist)
+                  (setq head-seen t)))))
+       (forward-line))
+     change-alist)))
 
 (defun p4-have-rev (filespec)
   "Run 'p4 fstat -t haveRev FILESPEC' and return the haveRev
 as a string"
   (let ((args (list "fstat" "-T" "haveRev" filespec)))
     (message "Running p4 %s" (p4-join-list args))
-    (p4-with-temp-buffer args
-      (let (haveRev)
-        (while (not (eobp))
-          (when (looking-at "^\\.\\.\\. haveRev \\([0-9]+\\)")
-            (setq haveRev (match-string 1))
-            (goto-char (point-max)))
-          (forward-line))
-        (when (not haveRev)
-          (error "Unable to determine have revision from 'p4 %s' which returned\n%s"
-                 (p4-join-list args) (buffer-substring (point-min) (point-max))))
-        ;; answer
-        haveRev))))
+    (p4-with-temp-buffer
+     args
+     (let (haveRev)
+       (while (not (eobp))
+         (when (looking-at "^\\.\\.\\. haveRev \\([0-9]+\\)")
+           (setq haveRev (match-string 1))
+           (goto-char (point-max)))
+         (forward-line))
+       (when (not haveRev)
+         (error "Unable to determine have revision from 'p4 %s' which returned\n%s"
+                (p4-join-list args) (buffer-substring (point-min) (point-max))))
+       ;; answer
+       haveRev))))
 
 (defun p4-annotate-changes (filespec)
   "Using p4 annotate -I -q FILESPEC, return a list of change
 numbers, one for each line of FILESPEC."
   (let* ((args (list "annotate" "-I" "-q" filespec)))
     (message "Running p4 %s" (p4-join-list args))
-    (p4-with-temp-buffer args
-      (cl-loop while (re-search-forward "^\\([1-9][0-9]*\\):" nil t)
-               collect (string-to-number (match-string 1))))))
+    (p4-with-temp-buffer
+     args
+     (cl-loop while (re-search-forward "^\\([1-9][0-9]*\\):" nil t)
+              collect (string-to-number (match-string 1))))))
 
 (defun p4-get-relative-depot-filespec (encoded-filespec)
   "Given a p4 encoded filespec, typically a path to a local file
@@ -3337,58 +3344,59 @@ return struct will invalid (revision will be -1)."
   (let ((args (list "describe" "-s" (format "%s" change))))
     (message "Running: p4 %s" (p4-join-list args))
 
-    (p4-with-temp-buffer args
-      (let* ((re-start "^\\.\\.\\. \\(//[^ ]+/")
-             (branch-re (concat re-start (regexp-quote relative-filespec) "\\)" "#\\([0-9]+\\)"))
-             (base-re (concat re-start (file-name-nondirectory relative-filespec) "\\)"
-                              "#\\([0-9]+\\)"))
-             matched-basename
-             other-filespec
-             user
-             date
-             desc
-             rev)
-        (while (not (eobp))
-          ;; grab user?
-          (if (and (not user)
-                   (looking-at "^Change [0-9]+ by \\([^@]+\\)@[^ ]+ on \\([^ ]+\\)"))
-              (setq user (match-string 1)
-                    date (match-string 2))
-            ;; else grab first line of desc?
-            (if (and (not desc)
-                     (looking-at "\t\\(.+\\)"))
-                (setq desc (match-string 1))
-              ;; grab other-filespec and rev?
-              (if (looking-at branch-re) ;; Looking at //OTHER-BRANCH/RELATIVE-FILESPEC?
-                  (progn
-                    (setq other-filespec (match-string 1)
-                          rev    (match-string 2))
-                    (goto-char (point-max)))
-                (when (looking-at base-re) ;; else looking at //OTHER-BRANCH/..../BASENAME?
-                  ;; Match this as it's most likely the move of a file from one directory to another
-                  ;; which keeping same basename.
-                  (if matched-basename
-                      ;; multiple matches on same basename, can't use basename
-                      (setq other-filespec nil)
-                    ;; else first match
-                    (setq other-filespec (match-string 1) ;; really more than the branch
-                          rev    (match-string 2)
-                          matched-basename t))))))
-          (forward-line))
+    (p4-with-temp-buffer
+     args
+     (let* ((re-start "^\\.\\.\\. \\(//[^ ]+/")
+            (branch-re (concat re-start (regexp-quote relative-filespec) "\\)" "#\\([0-9]+\\)"))
+            (base-re (concat re-start (file-name-nondirectory relative-filespec) "\\)"
+                             "#\\([0-9]+\\)"))
+            matched-basename
+            other-filespec
+            user
+            date
+            desc
+            rev)
+       (while (not (eobp))
+         ;; grab user?
+         (if (and (not user)
+                  (looking-at "^Change [0-9]+ by \\([^@]+\\)@[^ ]+ on \\([^ ]+\\)"))
+             (setq user (match-string 1)
+                   date (match-string 2))
+           ;; else grab first line of desc?
+           (if (and (not desc)
+                    (looking-at "\t\\(.+\\)"))
+               (setq desc (match-string 1))
+             ;; grab other-filespec and rev?
+             (if (looking-at branch-re) ;; Looking at //OTHER-BRANCH/RELATIVE-FILESPEC?
+                 (progn
+                   (setq other-filespec (match-string 1)
+                         rev    (match-string 2))
+                   (goto-char (point-max)))
+               (when (looking-at base-re) ;; else looking at //OTHER-BRANCH/..../BASENAME?
+                 ;; Match this as it's most likely the move of a file from one directory to another
+                 ;; which keeping same basename.
+                 (if matched-basename
+                     ;; multiple matches on same basename, can't use basename
+                     (setq other-filespec nil)
+                   ;; else first match
+                   (setq other-filespec (match-string 1) ;; really more than the branch
+                         rev    (match-string 2)
+                         matched-basename t))))))
+         (forward-line))
 
-        (when (not other-filespec)
-          (setq rev "-1"
-                other-filespec (concat "//OTHER-BRANCH/" relative-filespec)))
-        ;; answer
-        (let ((revision (string-to-number rev)))
-          (make-p4-file-revision
-           :filespec (format "%s#%d" other-filespec revision)
-           :filename other-filespec
-           :revision revision
-           :change change
-           :date date
-           :user user
-           :description desc))))))
+       (when (not other-filespec)
+         (setq rev "-1"
+               other-filespec (concat "//OTHER-BRANCH/" relative-filespec)))
+       ;; answer
+       (let ((revision (string-to-number rev)))
+         (make-p4-file-revision
+          :filespec (format "%s#%d" other-filespec revision)
+          :filename other-filespec
+          :revision revision
+          :change change
+          :date date
+          :user user
+          :description desc))))))
 
 (defun p4--annotate-internal (filespec &optional src-line)
   "Annotate a single FILESPEC which is a p4 encoded path. This
@@ -3489,10 +3497,10 @@ including the #REV)."
   "Run p4 ARGS and return a list of matches for REGEXP in the output.
 With optional argument GROUP, return that group from each match."
   (p4-with-temp-buffer args
-    (let (result)
-      (while (re-search-forward regexp nil t)
-        (push (match-string (or group 0)) result))
-      (nreverse result))))
+                       (let (result)
+                         (while (re-search-forward regexp nil t)
+                           (push (match-string (or group 0)) result))
+                         (nreverse result))))
 
 ;; Completions are generated as needed in completing-read, but there's
 ;; no way for the completion function to return the annotations as
@@ -3519,13 +3527,13 @@ annotations.")
 p4-completion-annotations so that it maps the matches for GROUP
 to the matches for ANNOTATION."
   (p4-with-temp-buffer args
-    (let (result (ht (make-hash-table :test #'equal)))
-      (while (re-search-forward regexp nil t)
-        (let ((key (match-string group)))
-          (push key result)
-          (puthash key (match-string annotation) ht)))
-      (setq p4-completion-annotations ht)
-      (nreverse result))))
+                       (let (result (ht (make-hash-table :test #'equal)))
+                         (while (re-search-forward regexp nil t)
+                           (let ((key (match-string group)))
+                             (push key result)
+                             (puthash key (match-string annotation) ht)))
+                         (setq p4-completion-annotations ht)
+                         (nreverse result))))
 
 (defun p4-completing-read (completion-type prompt &optional initial-input)
   "Wrapper around completing-read."
@@ -4086,8 +4094,8 @@ path, view it via p4 print and return t else return nil"
         (if (match-string 3)
             (let ((args (list "where" (match-string 2))))
               (p4-with-temp-buffer args
-                (when (looking-at "//[^ \n]+ //[^ \n]+ \\(.*\\)")
-                  (find-file (match-string 1)))))
+                                   (when (looking-at "//[^ \n]+ //[^ \n]+ \\(.*\\)")
+                                     (find-file (match-string 1)))))
           (p4-depot-find-file (match-string 1)))))))
 
 
