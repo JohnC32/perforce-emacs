@@ -5,7 +5,7 @@
 Integration of the [[http://www.perforce.com/][Perforce]] software version management system into [[http://www.gnu.org/software/emacs/][GNU Emacs]]. p4.el provides Emacs
 interfaces that map directly to Perforce commands.
 
-Notes (Mar-2023):
+Notes (May-2023):
 
 - p4.el compiles without warnings and is tested with Emacs 26, 27, and 28.
 
@@ -116,7 +116,7 @@ performance improvements. One example difference is the elimination of the Perfo
 mode line. Perforce interactions can be slow and this slowed Emacs. Now all interactions with
 Perforce are explicit and invoked from a P4 menu selection or keybinding. This means that Emacs will
 be performant even if the Perforce server is slow or not responding. By default, most commands
-prompt you to run the action requests, thus enable you to provide additional switches.
+prompt you to run the action requests, which lets you to provide additional p4 switches.
 
 # LocalWords:  showall el gdr garethrees changelists filelog Ediff prev changelist diff's unshelve
-# LocalWords:  CN integ labelsync
+# LocalWords:  CN integ labelsync Rees
