@@ -81,6 +81,7 @@ Use the P4 menu or keybindings:
    -         p4 reload   Reload an unloaded client, label, or task stream
    C-c p H   p4 have     List the revisions most recently synced to workspace
    C-c p w   p4 where    Show how file names are mapped by the client view
+   -         p4 clients  List clients
  ------
    C-c p I   p4-integ    Integrate one set of files into another
    C-c p C-r p4-resolve  Resolve integrations and updates to workspace files

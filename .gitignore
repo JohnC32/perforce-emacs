@@ -2,3 +2,4 @@
 
 *.elc
 *~
+.flycheck_p4.el
