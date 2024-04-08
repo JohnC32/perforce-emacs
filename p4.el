@@ -4140,6 +4140,9 @@ Will prompt if needed."
   (p4-make-list-from-string
    (if (or p4-prompt-before-running-cmd current-prefix-arg)
        (p4-read-arg-string prompt initial-input completion-type)
+     ;; else non-interactive mode, must have input
+     (when (not initial-input)
+       (user-error "No input for '%s'" (replace-regexp-in-string ": $" "" (downcase prompt))))
      initial-input)))
 
 (defun p4-arg-complete (completion-type &rest args)
@@ -5036,4 +5039,4 @@ Optional: N, RESET."
 ;; LocalWords:  incf bvariant MVCE nreverse repeat:nil undoc listp noerror assq minibuffer xtext
 ;; LocalWords:  xbinary af posn pnt unshelved engin prev backtab moveto cff noconfirm subst'ed flet
 ;; LocalWords:  subst'd upcase enviro changenum print'd sp noop Rees diff'ing fboundp diffview letf
-;; LocalWords:  yyyy gregorian htmlize ol
+;; LocalWords:  yyyy gregorian htmlize ol downcase
