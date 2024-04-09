@@ -696,8 +696,9 @@ Run 'p4 describe -a -du CHANGE_NUM' on changelist"]
      ["Describe change showing affected and shelved files" p4-describe-all-files
       :help "M-x p4-describe-all-files
 Show all affected and shelved files in a changelist."]
-     ["Create, update, submit, or delete a changelist description" p4-change
-      :help "M-x p4-change"]
+     ["Change" p4-change
+      :help "M-x p4-change
+Create, update, submit, or delete a changelist"]
      ["Shelve" p4-shelve
       :help "M-x p4-shelve
 Store files from a pending changelist into the depot"]

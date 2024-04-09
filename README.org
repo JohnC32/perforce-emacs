@@ -37,7 +37,7 @@ Use the P4 menu or keybindings:
    C-c p e   p4 edit     Open an existing file for edit
    C-c p r   p4 revert   Discard changes from an opened file
    C-c p x   p4 delete   Open an existing file for deletion from the depot
-   C-c p m   p4 move     Move (rename) opened file from one location to another
+   C-c p m   p4 move     Move (rename) opened pfile from one location to another
    C-c p E   p4 reopen   Reopen (move between changelists or change file type)
  ------
    C-c p A   p4 fstat    Display file attributes - have revision, etc.
@@ -61,7 +61,7 @@ Use the P4 menu or keybindings:
    C-c p D   p4 describe Display a changelist description
    C-c p C-d p4 describe Display a changelist description with diff's
    C-c p M-d p4 describe Display all affected and shelved files in a change
-   C-c p C   p4 change   Create or edit a changelist description
+   C-c p C   p4 change   Change (create, update, submit, or delete a changelist)
    C-c p M-s p4 shelve   Store files from a pending changelist into the depot
    C-c p M-u p4 unshelve Restore shelved files from pending change to workspace
    C-c p S   p4 submit   Submit opened files to depot
