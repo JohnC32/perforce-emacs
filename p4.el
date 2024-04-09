@@ -2044,6 +2044,10 @@ BUFFER is the result of 'p4 change -i' or 'p4 submit -i'"
    ((string= cmd "change")
     (p4-change-update-form buffer "pending" "^Change \\([0-9]+\\) created"))
 
+   ;; p4-shelve
+   ((string= cmd "shelve")
+    (p4-change-update-form buffer "pending" "^Change \\([0-9]+\\) files shelved"))
+
    ;; p4 submit -i
    ;;    When a pending change is submitted, we have
    ;;       Change: CHANGENUM   =>   Change: NEW_CHANGENUM   (may rename)
