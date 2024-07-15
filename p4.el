@@ -308,7 +308,7 @@ and should return the //branch/name port if possible or nil."
      (:foreground "Firebrick" :background  "yellow"))
     (((class color) (background dark))
      (:foreground "chocolate1" :background  "blue3")))
-  "Face used for highlight items"
+  "Face used for highlight items."
   :group 'p4-faces)
 
 (defcustom p4-annotate-line-number-threshold 50000
@@ -627,7 +627,7 @@ p4 command."
 
 ;;; Menu:
 
-(easy-menu-define p4-menu nil "Perforce"
+(easy-menu-define p4-menu nil "Perforce menu."
   `("P4"
     ["Add" p4-add
      :help "M-x p4-add
@@ -943,8 +943,7 @@ This will evaluate BODY `coding-system-for-read' and
 
 If VAR is not set, return DEFAULT.  The client setting can come
 from a .perforce file or the environment.  The values are cached
-to avoid repeated calls to p4. p4 can be 'regularly/sporadically'
-slow."
+to avoid repeated calls to p4 which can be slow."
   (let* ((p4config (p4--get-p4-config)) ;; typically .perforce
          (workspace-root (locate-dominating-file default-directory p4config))
          (key (concat (format "%s : %s" var default)
@@ -1068,7 +1067,7 @@ exact match."
 
 (defvar p4--p4config-value-cache nil)
 (defun p4--get-p4-config (&optional force)
-  "Get the value of 'p4 set P4CONFIG'.
+  "Get the value of \"p4 set P4CONFIG\".
 This is typically \".perforce\" and is a file that is placed at
 the Perforce client workspace root.  This is a system wide setting
 defined by the environment variable $P4CONFIG, or by
@@ -1369,7 +1368,7 @@ Run the function MODE if non-NIL, otherwise `p4-basic-mode'."
   (concat "\\(?:error: \\)?"
           "Perforce client error:\n"
           "\tConnect to server failed")
-  "Regular expression matching output from Perforce when it can't connect to the server.")
+  "Regex matching output from Perforce when it can't connect to the server.")
 
 (defun p4-request-trust ()
   "Ask the user for permission to trust the Perforce server."
@@ -1572,7 +1571,7 @@ IGNORE-AUTO and NOCONFIRM are placeholders."
 
 Set file buffer or `default-directory' of non-file buffer to be
 `file-truename'.  In addition, on Windows, replace subst drives
-with the true path.  In Windows Command Prompt, type 'subst /?'
+with the true path.  In Windows Command Prompt, type \"subst /?\"
 to see subst'ed drives."
   (let ((file (buffer-file-name))
         true-file)
@@ -1896,7 +1895,8 @@ contain a filename with a revision or changelevel."
       (if (and (stringp p4-executable)
                (file-executable-p p4-executable)
                (zerop (p4-call-process nil t nil "help" cmd)))
-          (concat text "\n" (buffer-substring (point-min) (point-max)))
+          (let ((cmd-help (buffer-substring (point-min) (point-max))))
+            (concat text "\n" (replace-regexp-in-string "'" "\"" cmd-help)))
         text))))
 
 (cl-eval-when (load)
@@ -1994,9 +1994,9 @@ REV is the revision and DATE is when the change was made."
 
 (defun p4-change-update-form (buffer new-status re)
   "Perforce change update form.
-Rename a 'P4 change' buffer if needed
-BUFFER contains the output of 'p4 submit -i' or 'p4 change -i'
-NEW-STATUS is what to set the 'Status: value' to when RE
+Rename a \"P4 change\" buffer if needed
+BUFFER contains the output of \"p4 submit -i\" or \"p4 change -i\"
+NEW-STATUS is what to set the \"Status: value\" to when RE
 to identify the changenum is found in BUFFER.
 Returns t if updated."
 
@@ -2029,8 +2029,8 @@ Returns t if updated."
 
 (defun p4-change-success (cmd buffer)
   "Perforce change success.
-Handle successful CMD ('p4 change -i' or 'p4 submit -i')
-BUFFER is the result of 'p4 change -i' or 'p4 submit -i'"
+Handle successful CMD (\"p4 change -i\" or \"p4 submit -i\")
+BUFFER is the result of \"p4 change -i\" or \"p4 submit -i\""
 
   (cond
 
@@ -2155,7 +2155,7 @@ BUFFER is the result of 'p4 change -i' or 'p4 submit -i'"
   "Show both affected and shelved files in a changelist.
 Only the first line of the changelist description is shown.
 This exists because p4 describe doesn't have the ability to show
-both 'affected' and 'shelved' files in a pending changelist.
+both \"affected\" and \"shelved\" files in a pending changelist.
 To see all files in a pending changelist, it takes two commands:
     p4 describe -s CHANGENUM
     p4 describe -S -s CHANGENUM
@@ -2704,16 +2704,16 @@ Used by p4-opened to run p4 fstat and return a hash of depotFiles to
     opened-info-table))
 
 (defun p4--opened-internal-move-to-start ()
-  "Locate first non-comment line in 'P4 opened' buffer."
+  "Locate first non-comment line in \"P4 opened\" buffer."
   (goto-char (point-min))
   (while (looking-at "^#")
     (forward-line)))
 
 (defun p4--opened-internal (args)
   "Perforce opened ARGS implementation.
-Use both 'p4 opened' and 'p4 fstat' to display a 'P4 opened <dir>' containing
-//branch/path/to/file.exe#REV OPENED_INFO; head#HEAD_REV
-where HEAD_REV is highlighted if it is different from REV"
+Use both \"p4 opened\" and \"p4 fstat\" to display \"P4 opened <dir>\"
+containing //branch/path/to/file.exe#REV OPENED_INFO; head#HEAD_REV
+where HEAD_REV is highlighted if it is different from REV."
   (when p4-follow-symlinks
     (p4-refresh-buffer-with-true-path))
   (let ((opened-buf (p4-process-buffer-name (cons "opened" args))))
@@ -2960,7 +2960,7 @@ return a buffer listing those files.  Otherwise, return NIL."
               (save-window-excursion
                 (pop-to-buffer empty-buf)
                 (yes-or-no-p
-                 "File with empty diff opened for edit. Submit anyway? ")))
+                 "File with empty diff opened for edit, submit anyway? ")))
       (p4-form-command "change" args :move-to "Description:\n\t"
                        :commit-cmd "submit"
                        :mode 'p4-change-form-mode
@@ -3491,7 +3491,7 @@ first)."
           (cons change-alist deleted-revision))))))
 
 (defun p4-have-rev (filespec)
-  "Run 'p4 fstat -t haveRev FILESPEC' and return the haveRev as a string."
+  "Run \"p4 fstat -t haveRev FILESPEC\" and return the haveRev as a string."
   (let ((args (list "fstat" "-T" "haveRev" filespec)))
     (message "Running p4 %s" (p4-join-list args))
     (p4-with-temp-buffer
@@ -3674,7 +3674,7 @@ return struct will invalid (revision will be -1)."
 
 (defun p4--annotate-line-num-pair (for-export)
   "Compute line numbering strings for p4 annotate.
-Returns: '(line-num-format-str . no-line-num-str)
+Returns: (line-num-format-str . no-line-num-str)
 1. line-num-format-str is computed based on the buffer length minus
    the in-buffer header lines.  The length of the header lines is
    one less when setting up the buffer FOR-EXPORT.
@@ -3729,7 +3729,13 @@ comment at the top of the annotation buffer and insert line
 numbers as text.  For example, you can export the buffer using
 the `htmlize-buffer'."
   (let* ((decoded-file (p4-decode-path file))
-         (filespec (if (file-regular-p decoded-file)
+         ;; set default-directory to ensure we pickup the right client
+         ;; when within a symlink.
+         (is-regular-file (file-regular-p decoded-file))
+         (default-directory (if is-regular-file
+                                (file-name-directory decoded-file)
+                              default-directory))
+         (filespec (if is-regular-file
                        (concat file "#" (p4-have-rev file))
                      file))
          (src-line (and (string-equal file (p4-buffer-file-name))
@@ -4510,7 +4516,7 @@ Uses PNT and ARG."
   (setq font-lock-defaults '(p4-opened-list-font-lock-keywords t)))
 
 (defun p4--opened-refresh ()
-  "Re-run 'p4 opened' in a 'P4 opened' buffer."
+  "Re-run \"p4 opened\" in a \"P4 opened\" buffer."
   (interactive)
   (let ((curr-point (point))
         depot-path)
@@ -4602,7 +4608,7 @@ Uses PNT and ARG."
     map)
   "Keymap for P4 form mode.")
 
-(define-derived-mode p4-form-mode indented-text-mode "P4 Form"
+(define-derived-mode p4-form-mode text-mode "P4 Form"
   "Major mode for P4 forms."
   (setq fill-column 100
         indent-tabs-mode t
@@ -4619,9 +4625,8 @@ Uses PNT and ARG."
     map)
   "Keymap for p4-file-form-mode.")
 
-(define-derived-mode p4-file-form-mode indented-text-mode "P4 File Form"
-  "Major mode for 'p4 client' and 'p4 change' when invoked from
-a terminal"
+(define-derived-mode p4-file-form-mode text-mode "P4 File Form"
+  "Major mode for \"p4 client\" and \"p4 change\"."
   (setq fill-column 100
         indent-tabs-mode t
         font-lock-defaults '(p4-form-font-lock-keywords t)))
@@ -4849,6 +4854,16 @@ a terminal"
     (define-key map [mouse-2] 'p4-buffer-commands)
     (define-key map "o"       'p4-buffer-commands)
     map))
+
+(easy-menu-define
+  p4-diff-menu p4-diff-mode-map "P4 Diff Menu."
+  '("P4Diff"
+    ["Next file (N)" diff-file-next]
+    ["Prev file (P)" diff-prev-file]
+    ["Next hunk (n)" diff-file-next]
+    ["Prev hunk (p)" diff-prev-file]
+    ["Ediff file at point" p4-ediff-file-at-point]
+    ["Open item at point" p4-buffer-commands]))
 
 (defvar p4-diff-font-lock-keywords
   '(("^Change \\([1-9][0-9]*\\) by \\(\\S-+\\)@\\(\\S-+\\) on [0-9]+/.*"
