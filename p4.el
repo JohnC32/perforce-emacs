@@ -4866,8 +4866,9 @@ Uses PNT and ARG."
     ["Open item at point" p4-buffer-commands]))
 
 (defvar p4-diff-font-lock-keywords
-  '(("^Change \\([1-9][0-9]*\\) by \\(\\S-+\\)@\\(\\S-+\\) on [0-9]+/.*"
-     (1 'p4-change-face) (2 'p4-user-face) (3 'p4-client-face))
+  '(("^\\(Change \\([1-9][0-9]*\\) by \\(\\S-+\\)@\\(\\S-+\\) on [0-9]+/.*\\)"
+     (2 'p4-change-face) (3 'p4-user-face) (4 'p4-client-face)
+     (1 'p4-highlight-face prepend))
     ("^\\(\\S-+\\) on [0-9]+/[0-9]+/[0-9]+ by \\(\\S-+\\).*"
      (1 'p4-job-face) (2 'p4-user-face))
     ("^\t.*" . 'p4-description-face)
