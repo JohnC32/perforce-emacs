@@ -4859,9 +4859,9 @@ Uses PNT and ARG."
   p4-diff-menu p4-diff-mode-map "P4 Diff Menu."
   '("P4Diff"
     ["Next file (N)" diff-file-next]
-    ["Prev file (P)" diff-prev-file]
+    ["Prev file (P)" diff-file-prev]
     ["Next hunk (n)" diff-file-next]
-    ["Prev hunk (p)" diff-prev-file]
+    ["Prev hunk (p)" diff-file-prev]
     ["Ediff file at point" p4-ediff-file-at-point]
     ["Open item at point" p4-buffer-commands]))
 
