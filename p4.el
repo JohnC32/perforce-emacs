@@ -687,6 +687,7 @@ Show shelved changelists"]
      ["Show changes submitted" p4-changes
       :help "M-x p4-changes
 Show submitted changelists"]
+     ["--" nil nil]
      ["Describe change" p4-describe
       :help "M-x p4-describe
 Run 'p4 describe -s CHANGE_NUM' on changelist"]
@@ -696,6 +697,7 @@ Run 'p4 describe -a -du CHANGE_NUM' on changelist"]
      ["Describe change showing affected and shelved files" p4-describe-all-files
       :help "M-x p4-describe-all-files
 Show all affected and shelved files in a changelist."]
+     ["--" nil nil]
      ["Change" p4-change
       :help "M-x p4-change
 Create, update, submit, or delete a changelist"]
