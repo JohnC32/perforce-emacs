@@ -295,6 +295,18 @@ and should return the //branch/name port if possible or nil."
   "Face used for files open for edit."
   :group 'p4-faces)
 
+(defface p4-depot-move-delete-face
+  '((((class color) (background light)) (:foreground "brown"))
+    (((class color) (background dark)) (:foreground "brown")))
+  "Face used for files open for delete."
+  :group 'p4-faces)
+
+(defface p4-depot-move-add-face
+  '((((class color) (background light)) (:foreground "navy"))
+    (((class color) (background dark)) (:foreground "CadetBlue1")))
+  "Face used for files open for add."
+  :group 'p4-faces)
+
 (defface p4-form-comment-face '((t (:inherit font-lock-comment-face)))
   "Face for comment in P4 Form mode."
   :group 'p4-faces)
@@ -1590,7 +1602,7 @@ to see subst'ed drives."
           ;; Example:
           ;;   B:\>subst w: "c:\program files\GIMP 2"
           ;;   B:\>subst
-          ;;   B:\: => Z:\sbs\57\ciolfi.Bvariant.j1864196
+          ;;   B:\: => Z:\path\to\some\workspace
           ;;   W:\: => C:\program files\GIMP 2
           ;;   X:\: => L:\work
           ;;   Y:\: => L:\
@@ -2711,6 +2723,90 @@ Used by p4-opened to run p4 fstat and return a hash of depotFiles to
   (while (looking-at "^#")
     (forward-line)))
 
+(defun p4--ztag-opened-entry (name entry-hash &optional is-optional)
+  "Get p4 -ztag opened entry NAME from ENTRY-HASH.
+If entry NAME does not exist and if IS-OPTIONAL, then return nil,
+else assert."
+  (or (gethash name entry-hash)
+      (if is-optional
+          nil
+        (error "Assert, p4 -ztag entry name not found: %s" name))))
+
+(defun p4--opened-sorted (args)
+  "Run p4 opened ARGS with sorting.
+By default p4 opened ARGS sorts the results.  This means
+that you see things like:
+  //branch/path/to/a.txt#3 - move/delete default change (text)
+  //branch/path/to/b.txt#7 - move/delete default change (text)
+  //branch/path/to/c.txt#2 - edit default change (text)
+  //branch/path/to/y/r.txt#1 -  move/add default change (text)
+  //branch/path/to/z/t.txt#1 - move/add default change (text)
+where p4 move a.txt y/r.txt and p4 move b.txt y/r.txt.  We'd like:
+  //branch/path/to/a.txt#3 - move/delete default change (text)
+  //branch/path/to/z/t.txt#1 - move/add default change (text)
+  //branch/path/to/b.txt#7 - move/delete default change (text)
+  //branch/path/to/y/r.txt#1 -  move/add default change (text)
+  //branch/path/to/c.txt#2 - edit default change (text)
+To achieve this, we use p4 -ztag opened ARGS to get the connection
+between move/delete and move/add actions and then format the
+output matching p4 opened ARGS, but with the move/delete and
+move/add actions grouped together."
+  ;; Example for p4 move a.txt y/r.txt:
+  ;;  ... depotFile //branch/path/to/a.txt             (1)
+  ;;  ... movedFile //branch/path/to/y/r.txt
+  ;;  ... rev 3
+  ;;  ... action move/delete
+  ;;
+  ;;  ... depotFile //branch/path/to/y/r.txt
+  ;;  ... movedFile //branch/path/to/a.txt             (2)
+  ;;  ... rev 1
+  ;;  ... action move/add
+  ;; Notice that for the move/add, (2) connects to the moved/delete via (1).
+
+  (p4-run (cons "-ztag" (cons "opened" args)))
+  (if (= (point-min) (point-max))
+      (p4-run (cons "opened" args)) ;; Display p4 opened message when p4 -ztag opened is empty
+    (let ((ztag-entry-re "^\\.\\.\\. \\([^ ]+\\) \\(.+\\)$")
+          (opened-content "")
+          (move-adds (make-hash-table :test 'equal))) ;; movedFile -> depotFile
+      ;; p4 -ztag opened ARGS should returns "... NAME VALUE" on first line when ARGS is valid.
+      ;; If ARGS is invalid, we'll see an error message, so just return that.
+      (when (looking-at ztag-entry-re)
+        (while (not (eobp))
+          (let ((entry-hash (make-hash-table :test 'equal))) ;; p4 -ztag opened: ENTRY -> VALUE
+            (while (looking-at ztag-entry-re)
+              (puthash (match-string 1) (match-string 2) entry-hash)
+              (forward-line))
+
+            ;; When -s is used as in p4 -ztag opened -s (or -as, etc.), we have less fields and
+            ;; cannot work. With -s, movedFile, rev, type are not present.
+            (let* ((depotFile (p4--ztag-opened-entry "depotFile" entry-hash))
+                   (movedFile (p4--ztag-opened-entry "movedFile" entry-hash 'optional))
+                   (rev (p4--ztag-opened-entry "rev" entry-hash 'optional))
+                   (action (p4--ztag-opened-entry "action" entry-hash))
+                   (change (p4--ztag-opened-entry "change" entry-hash))
+                   (type (p4--ztag-opened-entry "type" entry-hash 'optional))
+                   (line (concat depotFile (when rev (concat "#" rev ))
+                                 " - " action " " change " change"
+                                 (when type (concat " (" type ")")) "\n")))
+              (if (string= action "move/add")
+                  (puthash movedFile line move-adds) ;; stow line for later insertion
+                (setq opened-content (concat line opened-content))))
+            (forward-line)))
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert opened-content)
+          (goto-char (point-min))
+          (while (re-search-forward "^\\([^#]+\\)#[0-9]+ - move/delete" nil t)
+            (let* ((depotFile (match-string 1))
+                   (line (gethash depotFile move-adds)))
+              (forward-line) ;; insert move/add line after current move/delete line
+              ;; Consider: p4 edit a.txt; p4 move a.txt y/r.txt; p4 -ztag opened -m 1
+              ;; We'll only have the moved/delete entry, hence no move/add line to insert.
+              (when line
+                (insert line))))
+          (goto-char (point-min)))))))
+
 (defun p4--opened-internal (args)
   "Perforce opened ARGS implementation.
 Use both \"p4 opened\" and \"p4 fstat\" to display \"P4 opened <dir>\"
@@ -2721,8 +2817,9 @@ where HEAD_REV is highlighted if it is different from REV."
   (let ((opened-buf (p4-process-buffer-name (cons "opened" args))))
     (with-current-buffer (p4-make-output-buffer opened-buf 'p4-opened-list-mode)
 
-      (setq p4--opened-args args)
-      (p4-run (cons "opened" args))
+      (setq p4--opened-args args) ;; for refresh
+
+      (p4--opened-sorted args)
 
       (let ((inhibit-read-only t))
         (goto-char (point-min))
@@ -3798,17 +3895,17 @@ the `htmlize-buffer'."
                   ;; This is from an integrated change due to p4 annotate -I, i.e a change on
                   ;; a different branch. To handle this we:
                   ;; 1. get the relative-filespec from
-                  ;;     p4 -ztag where /local-ssd/ciolfi/bvariant/..../variants/BlockMVCESlots.cpp
-                  ;;     ... depotFile //mw/Bvariant_2/matlab/..../variants/BlockMVCESlots.cpp
+                  ;;     p4 -ztag where /path/to/workspace/..../dir/file.cpp
+                  ;;     ... depotFile //loc/workspace/..../dir/file.cpp
                   ;;     ... clientFile .....
-                  ;;     ... path /local-ssd/ciolfi/bvariant/matlab/..../variants/BlockMVCESlots.cpp
+                  ;;     ... path /path/to/workspace/..../dir/file.cpp
                   ;;     (a) Encode local file path
                   ;;     (b) Match each path piece until no match starting from filename working
                   ;;         way up
-                  ;;           - BlockMVCESlots.cpp : match
-                  ;;           - variants           : match
-                  ;;           - ....               : match
-                  ;;           - matlab             : match
+                  ;;           - file.cpp      : match
+                  ;;           - dir           : match
+                  ;;           - ....          : match
+                  ;;           - workspace     : match
                   ;;         now we know the relative file name.
                   ;; 2. Use "p4 describe -s CN" (-s is summary and omits the diffs) to get
                   ;;    the OTHER_BRANCH and REV from by looking for relative-filespec in
@@ -4449,14 +4546,18 @@ Uses PNT and ARG."
 
 (defvar p4-basic-list-font-lock-keywords
   '(
-    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:move/\\)?add"
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?add"
      1 'p4-depot-add-face)
     ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:branch\\|integrate\\)"
      1 'p4-depot-branch-face)
-    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:move/\\)?delete"
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?delete"
      1 'p4-depot-delete-face)
     ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?\\(?:edit\\|updating\\)"
      1 'p4-depot-edit-face)
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?move/delete"
+     1 'p4-depot-move-delete-face)
+    ("^\\(//.*#[1-9][0-9]*\\) - \\(?:\\(?:unshelved, \\)?opened for \\)?move/add"
+     1 'p4-depot-move-add-face)
     ;; //branch/path/to/file.ext#1 - was edit, reverted
     ("^\\(//.*#[1-9][0-9]*\\)" 1 'p4-link-face)
     ("\\(HEAD#[0-9]+\\)"
@@ -4493,8 +4594,10 @@ Uses PNT and ARG."
               (p4-with-temp-buffer args
                                    (when (looking-at "//[^ \n]+ //[^ \n]+ \\(.*\\)")
                                      (find-file (match-string 1)))))
-          (p4-depot-find-file (match-string 1)))))))
-
+          (let ((depot-path (match-string-no-properties 1)))
+            (if (looking-at "^\\(\\(//.*\\)#[1-9][0-9]*\\) - \\(?:move/\\)?delete")
+                (p4-print `(,depot-path))
+              (p4-depot-find-file depot-path))))))))
 
 ;;; Opened list mode:
 
@@ -5049,17 +5152,16 @@ Optional: N, RESET."
 (provide 'p4)
 ;;; p4.el ends here
 
-;; LocalWords: el ediff Unshelve defp github Promislow Vaidheeswarran Osterlund Fujii Hironori ESC
-;; LocalWords:  Filsinger gdr garethrees gmail comint dired ps fontified VC defcustom netbin memq nt
-;; LocalWords:  dn dw dl truename logout cmds filelog jobspec labelsync passwd unshelve Keychain lsp
-;; LocalWords:  filespec defface dolist alist Keymap keymap dwim kbd fset defun EDiff defun's diff's
-;; LocalWords:  infile funcall defmacro zerop clrhash gethash setq puthash IANA euc kr eucjp jp iso
-;; LocalWords:  koi macosroman macintosh shiftjis jis nobom bom winansi cdr fn repeat:now nosort NNN
-;; LocalWords:  lessp vc setf progn noselect changelevel repeat:filespec mapconcat de lst delq subst
-;; LocalWords:  subprocess startfile bobp eobp eql buf mapcar stringp arglist docstring integerp
-;; LocalWords:  fontify cgit reviewboard defalias pw filetype sr sync'ing hange isearch plaintext
-;; LocalWords:  fontification propertize Prev defconst acd defstruct fspec ztag nondirectory caar
-;; LocalWords:  incf bvariant MVCE nreverse repeat:nil undoc listp noerror assq minibuffer xtext
-;; LocalWords:  xbinary af posn pnt unshelved engin prev backtab moveto cff noconfirm subst'ed flet
-;; LocalWords:  subst'd upcase enviro changenum print'd sp noop Rees diff'ing fboundp diffview letf
-;; LocalWords:  yyyy gregorian htmlize ol downcase
+;; LocalWords:  Promislow Vaidheeswarran Osterlund Fujii Hironori Filsinger Rees gdr garethrees
+;; LocalWords:  comint dired VC defcustom memq nt dn dw dl truename cmds filelog jobspec labelsync
+;; LocalWords:  passwd unshelve Keychain filespec defface NNN dolist alist Keymap keymap kbd dwim
+;; LocalWords:  ediff fset defun filetype defun's diff's infile funcall defmacro zerop clrhash EDiff
+;; LocalWords:  gethash setq puthash cdr IANA euc kr eucjp jp iso koi macosroman shiftjis jis nobom
+;; LocalWords:  bom winansi fn progn setf noselect changelevel repeat:filespec mapconcat delq
+;; LocalWords:  startfile bobp eobp eql noconfirm subst subst'ed subst'd upcase buf mapcar
+;; LocalWords:  stringp defp arglist docstring changenum diff'ing fboundp diffview integerp fontify
+;; LocalWords:  cgit reviewboard defalias prev pw sr sync'ing hange isearch noop lsp letf
+;; LocalWords:  fontification fontified propertize defconst acd defstruct fspec ztag nondirectory
+;; LocalWords:  yyyy gregorian htmlize ol caar incf MVCE nreverse repeat:nil undoc listp
+;; LocalWords:  noerror assq minibuffer downcase xtext xbinary af posn print'd pnt unshelved sp
+;; LocalWords:  backtab cff

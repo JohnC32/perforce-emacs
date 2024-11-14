@@ -37,7 +37,7 @@ Use the P4 menu or keybindings:
    C-c p e   p4 edit     Open an existing file for edit
    C-c p r   p4 revert   Discard changes from an opened file
    C-c p x   p4 delete   Open an existing file for deletion from the depot
-   C-c p m   p4 move     Move (rename) opened pfile from one location to another
+   C-c p m   p4 move     Move (rename) opened file from one location to another
    C-c p E   p4 reopen   Reopen (move between changelists or change file type)
  ------
    C-c p A   p4 fstat    Display file attributes - have revision, etc.
@@ -54,7 +54,7 @@ Use the P4 menu or keybindings:
    C-c p M-= p4 diff     Diff all p4 opened files side-by-side
                          }: next file, {: prev file
  Changes
-   C-c p o   p4 opened   List open files and display file status
+   C-c p o   p4 opened   List open files, sorting moves, and adding head status
    C-c p C-p p4 changes  Show pending changelists
    C-c p C-s p4 changes  Show shelved changelists
    C-c p M-s p4 changes  Show submitted changelists
@@ -83,8 +83,8 @@ Use the P4 menu or keybindings:
    C-c p w   p4 where    Show how file names are mapped by the client view
    -         p4 clients  List clients
  ------
-   C-c p I   p4-integ    Integrate one set of files into another
-   C-c p C-r p4-resolve  Resolve integrations and updates to workspace files
+   C-c p I   p4 integ    Integrate one set of files into another
+   C-c p C-r p4 resolve  Resolve integrations and updates to workspace files
  ------
    C-c p p   p4 print    Visit version of file in a buffer
    C-c p V   p4 annotate Print file lines and change info following integrations
