@@ -4658,7 +4658,7 @@ Uses PNT and ARG."
 (defun p4--opened-revert ()
   "Perforce opened revert."
   (interactive)
-  (p4-revert)
+  (call-interactively 'p4-revert)
   (let ((curr-point (point)))
     (save-excursion
       (p4--opened-refresh))
