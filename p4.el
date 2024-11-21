@@ -2791,7 +2791,7 @@ move/add actions grouped together."
                                  (when type (concat " (" type ")")) "\n")))
               (if (string= action "move/add")
                   (puthash movedFile line move-adds) ;; stow line for later insertion
-                (setq opened-content (concat line opened-content))))
+                (setq opened-content (concat opened-content line))))
             (forward-line)))
         (let ((inhibit-read-only t))
           (erase-buffer)
