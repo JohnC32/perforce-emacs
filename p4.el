@@ -479,41 +479,42 @@ Line number background is shaded based on Adige."
   "List of faces for showing annotation line age after 360 days.")
 
 ;; Local variables in all buffers.
-(defvar p4-mode nil "P4 minor mode.")
+(defvar-local p4-mode nil "P4 minor mode.")
 
 ;; Local variables in P4 process buffers.
-(defvar p4-process-args nil "List of p4 command and arguments.")
-(defvar p4-process-callback nil
+(defvar-local p4-process-args nil "List of p4 command and arguments.")
+(defvar-local p4-process-callback nil
   "Function run when p4 command completes successfully.")
-(defvar p4-process-after-show nil
+(defvar-local p4-process-after-show nil
   "Function run after showing output of successful p4 command.")
-(defvar p4-process-auto-login nil
+(defvar-local p4-process-auto-login nil
   "If non-NIL, automatically prompt user to log in.")
-(defvar p4-process-buffers nil
+(defvar-local p4-process-buffers nil
   "List of buffers whose status is being updated here.")
-(defvar p4-process-pending nil
+(defvar-local p4-process-pending nil
   "Pending status update structure being updated here.")
-(defvar p4-process-pop-up-output nil
+(defvar-local p4-process-pop-up-output nil
   "Pop-up window?
 Function that returns non-NIL to display output in a pop-up
 window, or NIL to display it in the echo area.")
-(defvar p4-process-synchronous nil
+(defvar-local p4-process-synchronous nil
   "If non-NIL, run p4 command synchronously.")
 
 ;; Local variables in P4 Form buffers.
-(defvar p4-form-commit-command nil
+(defvar-local p4-form-commit-command nil
   "Perforce, p4 command to run when committing this form.")
-(defvar p4-form-commit-success-callback nil
+(defvar-local p4-form-commit-success-callback nil
   "Callback for p4 commit.
 Function run if commit succeeds.  It receives two arguments:
 the commit command and the buffer containing the output from the
 commit command.")
-(defvar p4-form-commit-failure-callback nil
+(defvar-local p4-form-commit-failure-callback nil
   "Callback for p4 commit failures.
 Function run if commit fails.  It receives two arguments:
 the commit command and the buffer containing the output from the
 commit command.")
-(defvar p4-form-head-text
+
+(defvar-local p4-form-head-text
   (format "# Created using Perforce-Emacs Integration version %s.
 # Type C-c C-c to send the form to the server.
 # Type C-x k to cancel the operation.
@@ -521,20 +522,8 @@ commit command.")
   "Text added to top of generic form.")
 
 ;; Local variables in P4 depot buffers.
-(defvar p4-default-directory nil "Original value of `default-directory'.")
-(defvar p4--opened-args nil "Used internally by `p4-opened'.")
-
-(dolist (var '(p4-mode p4-process-args p4-process-callback
-                       p4-process-buffers p4-process-pending
-                       p4-process-after-show p4-process-auto-login
-                       p4-process-pop-up-output p4-process-synchronous
-                       p4-form-commit-command
-                       p4-form-commit-success-callback
-                       p4-form-commit-failure-callback p4-default-directory
-                       p4--opened-args))
-  (make-variable-buffer-local var)
-  (put var 'permanent-local t))
-
+(defvar-local p4-default-directory nil "Original value of `default-directory'.")
+(defvar-local p4--opened-args nil "Used internally by `p4-opened'.")
 
 ;;; P4 minor mode:
 
