@@ -3371,12 +3371,13 @@ argument DELETE-FILESPEC is non-NIL, remove the first line."
         ;; the buffer (such as restoring the first line containing the filespec, or adding
         ;; annotations) these additions don't get fontified.
         (remove-hook 'change-major-mode-hook 'font-lock-change-mode t)
+        (when (eq major-mode 'nxml-mode)
+          (remove-hook 'change-major-mode-hook 'nxml-cleanup t))
         (fundamental-mode)
         (goto-char (point-min))
         (unless delete-filespec
-          (insert first-line)
-          (set-buffer-modified-p nil)
-          )))))
+          (insert first-line))
+        (set-buffer-modified-p nil)))))
 
 (defun p4-mark-print-buffer (&optional print-buffer)
   "Perforce mark print buffer using optional PRINT-BUFFER."
