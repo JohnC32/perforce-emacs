@@ -1242,17 +1242,52 @@ characters.  Return result of calling function `buffer-file-name'."
       (file-truename name)
     name))
 
-(defun p4-encode-path (path)
-  "Encode file PATH for Perforce.
-Encode a file path per p4 requirements by replacing
-% => %25, @ => %40, # => %23, * => %2A"
-  (when path
-    (setq path (file-truename path)) ;; resolve symbolic links
-    (setq path (replace-regexp-in-string "%" "%25" path))
-    (setq path (replace-regexp-in-string "@" "%40" path))
-    (setq path (replace-regexp-in-string "#" "%23" path))
-    (setq path (replace-regexp-in-string "*" "%2A" path)))
-  path)
+(defun p4-is-encoded-path (file-path)
+  "Check if FILE-PATH is encoded.
+//foo/goo/bar.cpp    ==> t
+//foo/%40goo/bar.cpp ==> t
+//foo/@goo/bar.cpp   ==> nil ;; p4-encode-path yields //foo/%40goo/bar.cpp"
+  (setq file-path (replace-regexp-in-string "[#@][0-9]+$" "" file-path)) ;; strip version
+  (let ((ans t))
+    (if (string-match "[@#*]" file-path)
+        (setq ans nil) ;; "@" "#" or "*" ==> not encoded
+      (let ((start-index 0))
+        (while (and start-index
+                    (< start-index (length file-path)))
+          (setq start-index (string-match "%\\(25\\|40\\|23\\|2A\\)?" file-path start-index))
+          (let ((num (and start-index (match-string 1 file-path))))
+            (when start-index
+              (if (not num)
+                  ;; "%" followed by non-encoded number => not encoded
+                  (setq start-index nil
+                        ans nil)
+                (setq start-index (1+ start-index))))))))
+    ans))
+
+(defun p4-encode-path (file-path)
+  "Encode FILE-PATH for Perforce.
+Encode a FILE-PATH per p4 requirements by replacing
+% => %25, @ => %40, # => %23, * => %2A.
+FILE-PATH may exist on disk, if so it's full path is used.
+FILE-PATH may also be a depot path with optional version (not on disk)."
+  (when (and file-path
+             (not (p4-is-encoded-path file-path)))
+    (let ((f-path file-path)
+          (ver ""))
+      ;; Strip the version specification on a depot path
+      (when (string-match "^\\(.+\\)\\([#@][0-9]+\\)$" file-path)
+        (setq f-path (match-string 1 file-path)
+              ver (match-string 2 file-path)))
+      ;; Resolve symbolic links, get full path when file exists
+      (when (file-exists-p f-path)
+        (setq f-path (file-truename f-path)))
+      ;; Encode
+      (setq f-path (replace-regexp-in-string "%" "%25" f-path))
+      (setq f-path (replace-regexp-in-string "@" "%40" f-path))
+      (setq f-path (replace-regexp-in-string "#" "%23" f-path))
+      (setq f-path (replace-regexp-in-string "*" "%2A" f-path))
+      (setq file-path (concat f-path ver))))
+  file-path)
 
 (defun p4-decode-path (path)
   "Does inverse of `p4-encode-path', decoding Perforce PATH."
@@ -1978,6 +2013,7 @@ REV is the revision and DATE is when the change was made."
      (when (> (length ans) 1)
        (user-error "A single file with no options must be specified"))
      ans))
+  (setq file (p4-encode-path file))
   (p4-annotate-file file))
 
 (defp4cmd ;; defun p4-branch
@@ -3640,22 +3676,29 @@ first)."
           (cons change-alist deleted-revision))))))
 
 (defun p4-have-rev (filespec)
-  "Run \"p4 fstat -t haveRev FILESPEC\" and return the haveRev as a string."
-  (let ((args (list "fstat" "-T" "haveRev" filespec)))
+  "Run \"p4 fstat -t haveRev FILESPEC\" and return depotFile#haveRev."
+  (let ((args (list "fstat" "-T" "depotFile,haveRev" filespec)))
     (message "Running p4 %s" (p4-join-list args))
     (p4-with-temp-buffer
      args
-     (let (haveRev)
+     (let (depotFile
+           haveRev)
        (while (not (eobp))
-         (when (looking-at "^\\.\\.\\. haveRev \\([0-9]+\\)")
-           (setq haveRev (match-string 1))
+         (cond
+          ((looking-at "^\\.\\.\\. depotFile \\(.+\\)$")
+           (setq depotFile (match-string 1)))
+          ((looking-at "^\\.\\.\\. haveRev \\([0-9]+\\)")
+           (setq haveRev (match-string 1))))
+         (when (and depotFile haveRev)
            (goto-char (point-max)))
          (forward-line))
        (when (not haveRev)
          (error "Unable to determine have revision from 'p4 %s' which returned\n%s"
                 (p4-join-list args) (buffer-substring (point-min) (point-max))))
        ;; answer
-       haveRev))))
+       (if (and depotFile haveRev)
+           (concat depotFile "#" haveRev)
+         nil)))))
 
 (defun p4-annotate-changes (filespec)
   "Use p4 annotate to get list of change numbers.
@@ -3868,7 +3911,7 @@ FOR-EXPORT  has the same meaning as in `p4-annotate-file'."
 
 (defvar p4--annotate-source-line-start)
 
-(defun p4-annotate-file (file &optional for-export)
+(defun p4-annotate-file (file &optional for-export no-show)
   "Annotate FILE walking through integrations.
 FILE can be a path to a local file or a depot path (optionally
 including the #REV).
@@ -3876,7 +3919,9 @@ including the #REV).
 Optional FOR-EXPORT, if t, will suppress the '# keys- ...'
 comment at the top of the annotation buffer and insert line
 numbers as text.  For example, you can export the buffer using
-the `htmlize-buffer'."
+the `htmlize-buffer'.
+
+Optional NO-SHOW, if t, will not show the annotated buffer."
   (let* ((decoded-file (p4-decode-path file))
          ;; set default-directory to ensure we pickup the right client
          ;; when within a symlink.
@@ -3885,7 +3930,7 @@ the `htmlize-buffer'."
                                 (file-name-directory decoded-file)
                               default-directory))
          (filespec (if is-regular-file
-                       (concat file "#" (p4-have-rev file))
+                       (p4-have-rev file)
                      file))
          (src-line (and (string-equal file (p4-buffer-file-name))
                         (line-number-at-pos (point))))
@@ -3904,7 +3949,7 @@ the `htmlize-buffer'."
               (when (setq file-change-alist (car prior-parsed-info))
                 (setq filespec prior-filespec))))
           (when (not file-change-alist)
-            (error "%s not available" filespec)))
+            (error "%s is not in Perforce (p4 filelog failed)" filespec)))
         (with-current-buffer (p4-make-output-buffer buf)
           (let* ((line-changes (p4-annotate-changes filespec))
                  (lines (length line-changes))
@@ -3987,9 +4032,10 @@ the `htmlize-buffer'."
             (setq truncate-lines t)
             (use-local-map p4-annotate-mode-map)))))
     (setq p4--get-full-name-hash (make-hash-table :test 'equal))
-    (with-selected-window (display-buffer buf)
-      (when src-line
-        (p4-goto-line (+ 1 src-line))))
+    (when (not no-show)
+      (with-selected-window (display-buffer buf)
+        (when src-line
+          (p4-goto-line (+ 1 src-line)))))
     ;; Return the "P4 annotate FILE" buffer
     buf))
 
@@ -5202,7 +5248,7 @@ Optional: N, RESET."
 (provide 'p4)
 ;;; p4.el ends here
 
-;; LocalWords:  Promislow Vaidheeswarran Osterlund Fujii Hironori Filsinger Rees gdr garethrees
+;; LocalWords:  Promislow Vaidheeswarran Osterlund Fujii Hironori Filsinger Rees gdr garethrees nxml
 ;; LocalWords:  comint dired VC defcustom memq nt dn dw dl truename cmds filelog jobspec labelsync
 ;; LocalWords:  passwd unshelve Keychain filespec defface NNN dolist alist Keymap keymap kbd dwim
 ;; LocalWords:  ediff fset defun filetype defun's diff's infile funcall defmacro zerop clrhash EDiff
