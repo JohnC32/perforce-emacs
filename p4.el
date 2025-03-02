@@ -2737,7 +2737,7 @@ Used by p4-opened to run p4 fstat and return a hash of depotFiles to
         is-unresolved
         bad-content)
 
-    (with-temp-file x-file
+    (with-temp-file x-file ;; using (insert) to avoid "wrote x-file" message
       (insert opened-files))
 
     ;; p4 -x x-file fstat -T "depotFile, headRev"
@@ -2796,6 +2796,52 @@ else assert."
           nil
         (error "Assert, p4 -ztag entry name not found: %s" name))))
 
+(defun p4--opened-get-move-adds (moved-files args)
+  "Run p4 -ztag opened MOVED-FILES ARGS to get move-adds hash."
+  (let ((args-file (make-temp-file "p4-el-opened-moved-" nil ".txt"))
+        (move-adds (make-hash-table :test 'equal)) ;; movedFile -> opened-line
+        (ztag-entry-re "^\\.\\.\\. \\([^ ]+\\) \\(.+\\)$"))
+    (with-temp-file args-file ;; using (insert) to avoid "wrote x-file" message
+      (insert moved-files))
+    (with-temp-buffer
+      (p4-run (append `("-x" ,args-file "-ztag" "opened") args))
+      (when (looking-at ztag-entry-re)
+        (while (not (eobp))
+          ;; Skip blank lines
+          (while (and (not (eobp)) (looking-at "^[ \t]*$"))
+            (forward-line))
+          ;; Parse at entry
+          (when (not (eobp))
+            (let (depotFile movedFile rev action change type line)
+              (while (looking-at ztag-entry-re)
+                (let ((field (match-string 1))
+                      (value (match-string 2)))
+                  (cond
+                   ((string= field "depotFile")
+                    (setq depotFile value))
+                   ((string= field "movedFile")
+                    (setq movedFile value))
+                   ((string= field "rev")
+                    (setq rev value))
+                   ((string= field "action")
+                    (setq action value))
+                   ((string= field "change")
+                    (setq change value))
+                   ((string= field "type")
+                    (setq type value)))
+                  (forward-line)))
+              (setq line (concat depotFile (when rev (concat "#" rev ))
+                                 " - " action " " change " change"
+                                 (when type (concat " (" type ")")) "\n"))
+              ;; When -s is used as in p4 -ztag opened -s (or -as, etc.), we have less fields
+              ;; and the move sorting will not work. With -s, movedFile, rev, type are not
+              ;; present.
+              (when (string= action "move/add")
+                (puthash movedFile line move-adds) ;; stow line for later insertion
+                ))))))
+    (delete-file args-file)
+    move-adds))
+
 (defun p4--opened-sorted (args)
   "Run p4 opened ARGS with sorting.
 By default p4 opened ARGS sorts the results.  This means
@@ -2803,14 +2849,15 @@ that you see things like:
   //branch/path/to/a.txt#3 - move/delete default change (text)
   //branch/path/to/b.txt#7 - move/delete default change (text)
   //branch/path/to/c.txt#2 - edit default change (text)
-  //branch/path/to/y/r.txt#1 -  move/add default change (text)
+  //branch/path/to/y/r.txt#1 - move/add default change (text)
   //branch/path/to/z/t.txt#1 - move/add default change (text)
-where p4 move a.txt y/r.txt and p4 move b.txt y/r.txt.  We'd like:
-  //branch/path/to/a.txt#3 - move/delete default change (text)
-  //branch/path/to/z/t.txt#1 - move/add default change (text)
-  //branch/path/to/b.txt#7 - move/delete default change (text)
-  //branch/path/to/y/r.txt#1 -  move/add default change (text)
+where p4 move a.txt y/r.txt and p4 move b.txt y/r.txt.  We produce:
+  //branch/path/to/a.txt#3 - move/delete default change (text); move[1]
+  //branch/path/to/z/t.txt#1 - move/add default change (text); move[1]
+  //branch/path/to/b.txt#7 - move/delete default change (text); move[2]
+  //branch/path/to/y/r.txt#1 - move/add default change (text); move[2]
   //branch/path/to/c.txt#2 - edit default change (text)
+We annotate each move line with a move[count] to show the entries are paired.
 To achieve this, we use p4 -ztag opened ARGS to get the connection
 between move/delete and move/add actions and then format the
 output matching p4 opened ARGS, but with the move/delete and
@@ -2827,49 +2874,36 @@ move/add actions grouped together."
   ;;  ... action move/add
   ;; Notice that for the move/add, (2) connects to the moved/delete via (1).
 
-  (p4-run (cons "-ztag" (cons "opened" args)))
-  (if (= (point-min) (point-max))
-      (p4-run (cons "opened" args)) ;; Display p4 opened message when p4 -ztag opened is empty
-    (let ((ztag-entry-re "^\\.\\.\\. \\([^ ]+\\) \\(.+\\)$")
-          (opened-content "")
-          (move-adds (make-hash-table :test 'equal))) ;; movedFile -> depotFile
-      ;; p4 -ztag opened ARGS should returns "... NAME VALUE" on first line when ARGS is valid.
-      ;; If ARGS is invalid, we'll see an error message, so just return that.
-      (when (looking-at ztag-entry-re)
-        (while (not (eobp))
-          (let ((entry-hash (make-hash-table :test 'equal))) ;; p4 -ztag opened: ENTRY -> VALUE
-            (while (looking-at ztag-entry-re)
-              (puthash (match-string 1) (match-string 2) entry-hash)
-              (forward-line))
+  (p4-run (cons "opened" args))
+  (let (moved-files)
+    (while (re-search-forward "^\\([^# ]+\\)#[0-9]+ - move/\\(?:add\\|delete\\)" nil t)
+      (setq moved-files (concat moved-files (match-string 1) "\n")))
+    (when moved-files
+      (let ((move-adds (p4--opened-get-move-adds moved-files args))
+            (inhibit-read-only t)
+            (move-count 1))
 
-            ;; When -s is used as in p4 -ztag opened -s (or -as, etc.), we have less fields and
-            ;; cannot work. With -s, movedFile, rev, type are not present.
-            (let* ((depotFile (p4--ztag-opened-entry "depotFile" entry-hash))
-                   (movedFile (p4--ztag-opened-entry "movedFile" entry-hash 'optional))
-                   (rev (p4--ztag-opened-entry "rev" entry-hash 'optional))
-                   (action (p4--ztag-opened-entry "action" entry-hash))
-                   (change (p4--ztag-opened-entry "change" entry-hash))
-                   (type (p4--ztag-opened-entry "type" entry-hash 'optional))
-                   (line (concat depotFile (when rev (concat "#" rev ))
-                                 " - " action " " change " change"
-                                 (when type (concat " (" type ")")) "\n")))
-              (if (string= action "move/add")
-                  (puthash movedFile line move-adds) ;; stow line for later insertion
-                (setq opened-content (concat opened-content line))))
-            (forward-line)))
-        (let ((inhibit-read-only t))
-          (erase-buffer)
-          (insert opened-content)
-          (goto-char (point-min))
-          (while (re-search-forward "^\\([^#]+\\)#[0-9]+ - move/delete" nil t)
-            (let* ((depotFile (match-string 1))
-                   (line (gethash depotFile move-adds)))
-              (forward-line) ;; insert move/add line after current move/delete line
-              ;; Consider: p4 edit a.txt; p4 move a.txt y/r.txt; p4 -ztag opened -m 1
-              ;; We'll only have the moved/delete entry, hence no move/add line to insert.
-              (when line
-                (insert line))))
-          (goto-char (point-min)))))))
+        ;; Delete move/add entry lines
+        (goto-char (point-min))
+        (while (re-search-forward "^\\([^# ]+\\)#[0-9]+ - move/add" nil t)
+          (delete-region (line-beginning-position)
+                         (save-excursion (forward-line) (line-beginning-position))))
+
+        ;; Add in the move/add entry lines after the corresponding move/delete line
+        (goto-char (point-min))
+        (while (re-search-forward "^\\([^# ]+\\)#[0-9]+ - move/delete" nil t)
+          (let* ((depotFile (match-string 1))
+                 (line (gethash depotFile move-adds))
+                 (move-count-label (format "; move[%d]" move-count)))
+            (setq move-count (1+ move-count))
+            (end-of-line)
+            (insert move-count-label)
+            (forward-line) ;; insert move/add line after current move/delete line
+            ;; Consider: p4 edit a.txt; p4 move a.txt y/r.txt; p4 -ztag opened -m 1
+            ;; We'll only have the moved/delete entry, hence no move/add line to insert.
+            (when line
+              (insert (replace-regexp-in-string "\n$" (concat move-count-label "\n") line)))))
+        (goto-char (point-min))))))
 
 (defun p4--opened-internal (args)
   "Perforce opened ARGS implementation.
@@ -2898,45 +2932,45 @@ where HEAD_REV is highlighted if it is different from REV."
       ;; Each line of current buffer should contain
       ;;    //branch/path/to/file.exe#REV OPENED_INFO
       ;; Set opened-files containing "//branch/path/to/file.exe\n" lines
-      (let (opened-files
-            bad-content ;; bad content occurs when p4 opened was invoked outside of a workspace
-            opened-info-table)
-        (while (and (not (eobp))
+      (let (bad-content) ;; bad content occurs when p4 opened was invoked outside of a workspace
+
+        (while (and (not (eobp)) ;; look for bad-content
                     (not bad-content))
-          (if (looking-at "^\\(//[^ #]+\\)")
-              (setq opened-files
-                    (concat opened-files
-                            (buffer-substring-no-properties (match-beginning 1) (match-end 1))
-                            "\n"))
+          (when (not (looking-at "^\\(//[^ #]+\\)"))
             (setq bad-content t))
           (forward-line))
+        (p4--opened-internal-move-to-start)
 
         (when (not bad-content)
           ;; p4 opened content is good, now run p4 fstat and load
           ;; opened-info-table with KEY = depotFile, VALUE = (cons headRev is-unresolved)
-          (setq opened-info-table (p4--opened-get-info opened-files))
-          (when opened-info-table
-            ;; Augment the p4 opened lines with the headRev's
-            (let ((inhibit-read-only t))
-              (p4--opened-internal-move-to-start)
-              (while (and (not (eobp))
-                          (not bad-content))
-                (if (looking-at "^\\(//[^ #]+\\)#\\([0-9]+\\)")
-                    (let* ((depotFile (buffer-substring-no-properties
-                                       (match-beginning 1) (match-end 1)))
-                           (haveRev (buffer-substring-no-properties
-                                     (match-beginning 2) (match-end 2)))
-                           (opened-info (gethash depotFile opened-info-table))
-                           (headRev (car opened-info))
-                           (is-unresolved (cdr opened-info)))
-                      (when headRev
-                        (move-end-of-line 1)
-                        (let ((opened-info-text
-                               (concat (if (string= haveRev headRev) "; head#" "; HEAD#") headRev
-                                       (when is-unresolved "; NEEDS-RESOLVE"))))
-                          (insert opened-info-text)))
-                      (forward-line))
-                  (setq bad-content t)))))))
+          (let* ((opened-files (replace-regexp-in-string
+                                "#[0-9]+ - .+$" ""
+                                (buffer-substring-no-properties (point) (point-max))))
+                 (opened-info-table (p4--opened-get-info opened-files)))
+
+            (when opened-info-table
+              ;; Augment the p4 opened lines with the headRev's
+              (let ((inhibit-read-only t))
+                (p4--opened-internal-move-to-start)
+                (while (and (not (eobp))
+                            (not bad-content))
+                  (if (looking-at "^\\(//[^ #]+\\)#\\([0-9]+\\)")
+                      (let* ((depotFile (buffer-substring-no-properties
+                                         (match-beginning 1) (match-end 1)))
+                             (haveRev (buffer-substring-no-properties
+                                       (match-beginning 2) (match-end 2)))
+                             (opened-info (gethash depotFile opened-info-table))
+                             (headRev (car opened-info))
+                             (is-unresolved (cdr opened-info)))
+                        (when headRev
+                          (move-end-of-line 1)
+                          (let ((opened-info-text
+                                 (concat (if (string= haveRev headRev) "; head#" "; HEAD#") headRev
+                                         (when is-unresolved "; NEEDS-RESOLVE"))))
+                            (insert opened-info-text)))
+                        (forward-line))
+                    (setq bad-content t))))))))
       (p4--opened-internal-move-to-start))
     (display-buffer opened-buf)))
 
