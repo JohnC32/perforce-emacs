@@ -78,7 +78,7 @@
 (defgroup p4 nil "Perforce VC System." :group 'tools)
 
 (eval-and-compile
-  ;; This is needed at compile time by p4-help-text.
+  ;; This is needed at compile time by p4--help-text.
   (defcustom p4-executable
     (locate-file "p4" (append exec-path '("/usr/local/bin" "~/bin" ""))
                  (if (memq system-type '(ms-dos windows-nt)) '(".exe"))
@@ -201,7 +201,7 @@ complete on all clients."
   :group 'p4)
 
 (eval-and-compile
-  ;; This is needed at compile time by p4-help-text.
+  ;; This is needed at compile time by p4--help-text.
   (defcustom p4-modify-args-function #'identity
     "Function that modifies a Perforce command line argument list.
 All calls to the Perforce executable are routed through this
@@ -848,16 +848,17 @@ Run p4 help CMD"]
 ;;; Running Perforce (defun's required for macros)
 
 (eval-and-compile
-  ;; This is needed at compile time by p4-help-text.
+
+  ;; These are needed at compile time by p4--help-text.
+
   (defun p4-executable ()
-    "Check if `p4-executable' is NIL, and if so, prompt the user
-for a valid `p4-executable'."
+    "Get the p4-executable.
+If `p4-executable' is NIL, prompt for it."
     (interactive)
-    (or p4-executable (call-interactively 'p4-set-p4-executable))))
-
-(eval-and-compile
-
-  ;; These are needed at compile time by p4-help-text.
+    (or p4-executable
+        (if noninteractive
+            (error "The p4-executable is not set")
+          (call-interactively 'p4-set-p4-executable))))
 
   (defun p4--get-process-environment ()
     "Return a modified process environment for sub processes such
@@ -1927,19 +1928,135 @@ contain a filename with a revision or changelevel."
 ;;; Defining Perforce command interfaces:
 
 (cl-eval-when (compile)
-  ;; When byte-compiling, get help text by running "p4 help cmd".
-  (defun p4-help-text (cmd text)
-    (with-temp-buffer
-      (if (and (stringp p4-executable)
-               (file-executable-p p4-executable)
-               (zerop (p4-call-process nil t nil "help" cmd)))
-          (let ((cmd-help (buffer-substring (point-min) (point-max))))
-            (concat text "\n" (replace-regexp-in-string "'" "\"" cmd-help)))
-        text))))
+  ;;---------------------------------------;;
+  ;; p4--help-text only used during compile ;;
+  ;;---------------------------------------;;
 
-(cl-eval-when (load eval)
-  ;; When interpreting, don't run "p4 help cmd" (takes too long).
-  (defun p4-help-text (cmd text) (ignore cmd) text))
+  (defvar p4--help-cache-dir ".p4-help-cache/"
+    "Speed up re-compiling p4.el by using a p4 help CMD cache.
+Set to nil to disable the cache.")
+
+  (defvar p4--executable-ver nil)
+
+  (defvar p4--help-cmd-is-bad nil
+    "Non-nil if p4 help CMD fails or hangs")
+
+  (cl-defun p4--help-load-ver-check-cache ()
+    "Load `p4--executable-ver and check `p4--help-cache-dir`.
+Returns nil if error encountered."
+    (with-temp-buffer
+      (when (not (zerop (p4-call-process nil t nil "-V")))
+        (byte-compile-warn "%s -V returned non-zero status with output:\n%s
+p4.el did not compile successfully."
+                           p4-executable (buffer-substring (point-min) (point-max)))
+        (setq p4--help-cmd-is-bad t)
+        (cl-return-from p4--help-text text))
+      (setq p4--executable-ver (buffer-substring (point-min) (point-max))))
+
+    (let ((ver-file (concat p4--help-cache-dir "p4--executable-ver.txt"))
+          write-ver-file)
+
+      (cond
+
+       ;; New cache?
+       ((not (file-exists-p ver-file))
+        
+        (when (not (file-directory-p p4--help-cache-dir))
+          (make-directory p4--help-cache-dir))
+        (setq write-ver-file t))
+
+       ;; Check existing cache
+       (t
+        (with-temp-buffer
+          (insert-file-contents ver-file)
+          (let ((cached-ver (buffer-substring (point-min) (point-max))))
+            (when (not (string= cached-ver p4--executable-ver))
+              ;; Existing cache is invalid, clear it.
+              (cl-loop for file in (directory-files p4--help-cache-dir) do
+                       (when (string-match "^p4_help_" file)
+                         (delete-file file)))
+              (setq write-ver-file t))))))
+
+      ;; Unable to use cache
+      (when write-ver-file
+        (with-temp-file ver-file (insert p4--executable-ver))))
+
+    ;; success
+    t)
+
+  (cl-defun p4--help-text (cmd text)
+    "Concat TEXT and p4 help CMD together."
+
+    ;; Running "p4 help CMD" requires a valid `p4-executable' and a working Perforce server.  If
+    ;; things are misconfigured, p4 hep CMD will hang while trying to talk to the Perforce server.
+    ;;
+    ;; To avoid the expensive "p4 help CMD" we cache the result for later compiles in
+    ;; `p4--help-cache-dir'.  We leverage the fact that "p4 -V" to get the version doesn't contact
+    ;; the Perforce server.  Using this, we can determine if the cache is valid.
+    ;;
+
+    ;; Do we have p4-executable?
+    (when (or (not (stringp p4-executable))
+              (not (file-executable-p p4-executable)))
+      (byte-compile-warn "p4 executable (%S) does not exist. p4.el did not compile successfully."
+                         p4-executable)
+      (setq p4--help-cmd-is-bad t)
+      (cl-return-from p4--help-text text))
+
+    ;; Use cache if possible.
+    (let (cache-file)
+      (when p4--help-cache-dir
+        (setq cache-file (concat p4--help-cache-dir "p4_help_" cmd ".txt"))
+
+        ;; First time p4--help-text is invoked, load p4--executable-ver, check cache
+        (when (not p4--executable-ver)
+          (when (not (p4--help-load-ver-check-cache))
+            (cl-return-from p4--help-text text)))
+        
+        ;; Do we have the cached p4 help CMD?
+        (when (file-exists-p cache-file)
+          (let ((cmd-help (with-temp-buffer
+                            (insert-file-contents cache-file)
+                            (buffer-substring (point-min) (point-max)))))
+            (cl-return-from p4--help-text (concat text "\n" cmd-help)))))
+
+      ;; Concat TEXT and p4 help CMD.  Also, cache p4 help CMD result.
+      (with-temp-buffer
+        (let* (cmd-help
+               (timeout-seconds 6)
+               (process-environment (p4--get-process-environment))
+               (help-proc (start-process (concat "p4-help-" cmd) (current-buffer)
+                                         (p4-executable) "help" cmd)))
+
+          (set-process-sentinel help-proc
+                                (lambda (process event)
+                                  (ignore process)
+                                  (when (string= event "finished\n")
+                                    (setq cmd-help (buffer-substring (point-min) (point-max))))))
+
+          (with-timeout (timeout-seconds (progn
+                                           (byte-compile-warn "killing %S" help-proc)
+                                           (kill-process help-proc)))
+            (while (process-live-p help-proc)
+              ;; Use sit-for to run timers enabling with-timeout
+              (sit-for .1)))
+
+          (if (not cmd-help)
+              (progn
+                (setq p4--help-cmd-is-bad t)
+                (byte-compile-warn "'%s help %s' stalled and was terminated after %d seconds. \
+p4.el did not compile successfully."
+                                   (p4-executable) cmd timeout-seconds))
+            ;; Prevent compiler warnings due to "'" in help text use \=' instead.
+            (setq cmd-help (concat "\n" "p4 help " cmd "\n"
+                                   (replace-regexp-in-string "'" "\\\\='" cmd-help)))
+            (when cache-file
+              (with-temp-file cache-file (insert cmd-help))))
+
+          ;; (p4--help-text cmd text) result
+          (concat text "\n" cmd-help)))))
+
+  ) ;; end (cl-eval-when compile)
 
 (defmacro defp4cmd (name arglist help-cmd help-text &rest body)
   "Define a p4 function.
@@ -1950,7 +2067,7 @@ HELP-TEXT -- text to prepend to the Perforce help
 BODY -- body of command.
 
 Running p4 help HELP-CMD at compile time to get its docstring."
-  `(defun ,name ,arglist ,(p4-help-text help-cmd help-text) ,@body))
+  `(defun ,name ,arglist ,(p4--help-text help-cmd help-text) ,@body))
 
 (defmacro defp4cmd* (name help-text args-default &rest body)
   "Define an interactive p4 command.
@@ -3008,12 +3125,14 @@ with workspace changes made outside of Perforce."
  '("...")
  (p4-call-command cmd args :mode 'p4-basic-list-mode))
 
-(defp4cmd* ;; defun p4-refresh
- refresh
- "Refresh the contents of an unopened file. Alias for \"sync -f\"."
- (cons "-f" (p4-context-filenames-list))
- (ignore cmd)
- (p4-call-command "sync" args :mode 'p4-basic-list-mode))
+(defun p4-refresh (&optional args)
+  "Run p4 sync -f ARGS to refresh the contents of an unopened file."
+  (interactive
+   (when (or p4-prompt-before-running-cmd current-prefix-arg)
+     (let* ((args (cons "-f" (p4-context-filenames-list)))
+            (args-string (p4-join-list args)))
+       (list (p4-read-args "Run p4 sync (with args): " args-string)))))
+  (p4-call-command "sync" args :mode 'p4-basic-list-mode))
 
 (defp4cmd* ;; defun p4-reopen
  reopen
