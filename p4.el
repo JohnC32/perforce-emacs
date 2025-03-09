@@ -1835,7 +1835,7 @@ first."
       (match-string 1 name))))
 
 (defun p4--filelog-buffer-get-filename ()
-  "If in a 'P4 filelog ...' buffer return the path name."
+  "If in a \"P4 filelog ...\" buffer return the path name."
   ;; If (buffer-name) looks like
   ;;    P4 filelog -l -t //branch/path/to/file.ext
   ;;    P4 filelog -l -t //branch/path/to/file.ext#11
@@ -1937,7 +1937,7 @@ contain a filename with a revision or changelevel."
             (concat text "\n" (replace-regexp-in-string "'" "\"" cmd-help)))
         text))))
 
-(cl-eval-when (load)
+(cl-eval-when (load eval)
   ;; When interpreting, don't run "p4 help cmd" (takes too long).
   (defun p4-help-text (cmd text) (ignore cmd) text))
 
