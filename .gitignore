@@ -3,6 +3,3 @@
 *.elc
 *~
 .flycheck_p4.el
-
-# This is created when compiling p4.el
-.p4-help-cache/
