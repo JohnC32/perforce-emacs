@@ -11,6 +11,8 @@ Notes (Mar-2025):
 
 * Installation
 
+** Install from source
+
 1. Download p4.el and compile it:
 
    #+begin_src bash
@@ -26,6 +28,16 @@ Notes (Mar-2025):
 
 By default, the P4 global key bindings start with ~C-c p~. If you prefer a different key prefix,
 then you should customize the setting ~p4-global-key-prefix~.
+
+** Install using `straight` and `use-package`
+
+#+begin_src emacs-lisp
+(use-package p4
+  :straight (p4
+             :type git
+             :host github
+             :repo "JohnC32/perforce-emacs"))
+#+end_src
 
 * Use
 
