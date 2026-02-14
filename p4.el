@@ -3415,8 +3415,12 @@ argument DELETE-FILESPEC is non-NIL, remove the first line."
         (cl-letf (((symbol-function 'run-mode-hooks) #'p4--noop-run-mode-hooks))
           (let ((buffer-file-name file-name))
             (set-auto-mode)
-            (when (fboundp 'font-lock-ensure) ;; emacs 25 or later?
-              (font-lock-ensure (point-min) (point-max)))))
+            ;; fontify the buffer and if the mode has a problem, hide the error.
+            (condition-case err
+                (font-lock-ensure (point-min) (point-max))
+              (error err
+                     (message "Fontify p4 error for %s: %s"
+                              buffer-file-name (error-message-string err))))))
 
         ;; Now turn off the major mode, freezing the fontification so that when we add contents to
         ;; the buffer (such as restoring the first line containing the filespec, or adding
@@ -5268,11 +5272,11 @@ Optional: N, RESET."
 ;; LocalWords:  passwd unshelve Keychain filespec defface NNN dolist alist Keymap keymap kbd dwim
 ;; LocalWords:  ediff fset defun filetype defun's diff's infile funcall defmacro zerop clrhash EDiff
 ;; LocalWords:  gethash setq puthash cdr IANA euc kr eucjp jp iso koi macosroman shiftjis jis nobom
-;; LocalWords:  bom winansi fn progn setf noselect changelevel repeat:filespec mapconcat delq
-;; LocalWords:  startfile bobp eobp eql noconfirm subst subst'ed subst'd upcase buf mapcar
+;; LocalWords:  bom winansi fn progn setf noselect changelevel repeat:filespec mapconcat delq Rajesh
+;; LocalWords:  startfile bobp eobp eql noconfirm subst subst'ed subst'd upcase buf mapcar usr integ
 ;; LocalWords:  stringp defp arglist docstring changenum diff'ing fboundp diffview integerp fontify
 ;; LocalWords:  cgit reviewboard defalias prev pw sr sync'ing hange isearch noop lsp letf
 ;; LocalWords:  fontification fontified propertize defconst acd defstruct fspec ztag nondirectory
-;; LocalWords:  yyyy gregorian htmlize ol caar incf MVCE nreverse repeat:nil undoc listp
+;; LocalWords:  yyyy gregorian htmlize ol caar incf MVCE nreverse repeat:nil undoc listp changelists
 ;; LocalWords:  noerror assq minibuffer downcase xtext xbinary af posn print'd pnt unshelved sp
-;; LocalWords:  backtab cff
+;; LocalWords:  backtab cff changelist CN cp CHARSET charset dest dirs cn curr
