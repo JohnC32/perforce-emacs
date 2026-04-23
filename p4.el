@@ -529,6 +529,8 @@ commit command.")
 
 (defvar p4-prefix-map
   (let ((map (make-sparse-keymap)))
+    (define-key map "@"         'p4-sync)
+    (define-key map (kbd "C-@") 'p4-sync-changelist)
     (define-key map "a"         'p4-add)
     (define-key map "A"         'p4-fstat)
     (define-key map "b"         'p4-branch)

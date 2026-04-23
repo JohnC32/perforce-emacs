@@ -29,7 +29,7 @@ then you should customize the setting ~p4-global-key-prefix~.
 
 * Use
 
-Use the P4 menu or keybindings:
+Use the keybindings or P4 menu entries:
 
 #+begin_example
  ------
@@ -70,8 +70,8 @@ Use the P4 menu or keybindings:
    C-c p X   p4 fix      Mark jobs as being fixed by the specified changelist
  Workspace
    C-c p g   p4 update   Sync client with its view of the depot (w/safety check)
-   -         p4 sync     Synchronize the client with its view of the depot
-   -         p4 sync @=  Run 'p4 sync @=CN' to sync ONLY the contents of CN
+   C-c p @   p4 sync      Synchronize the client with its view of the depot (p4 sync)
+   C-c p C-@ p4 sync @=CN Sync ONLY the contents of a changelist number
    C-c p R   p4 sync -f  Refresh contents of an unopened file
    C-c p s   p4 status   Identify differences between the workspace and depot
    C-c p z   p4 reconcile Reconcile changes to workspace w/Perforce
