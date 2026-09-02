@@ -6,7 +6,7 @@
 ;; Copyright (c) 2009      Fujii Hironori
 ;; Copyright (c) 2012      Jason Filsinger
 ;; Copyright (c) 2013-2015 Gareth Rees <gdr@garethrees.org>
-;; Copyright (c) 2015-2024 John Ciolfi
+;; Copyright (c) 2015-2026 John Ciolfi
 
 ;; Version: 14.0
 ;;   This version started with the 2015 Version 12.0 from Gareth Rees <gdr@garethrees.org>
@@ -2549,9 +2549,18 @@ meaning we need to show more output in a popup window."
  (p4-call-command "help" args
                   :callback (lambda ()
                               (let ((case-fold-search))
-                                (cl-loop for re in '("\\<p4\\s-+help\\s-+\\([a-z][a-z0-9]*\\)\\>"
-                                                     "'p4\\(?:\\s-+-[a-z]+\\)*\\s-+\\([a-z][a-z0-9]*\\)\\>"
-                                                     "^\t\\([a-z][a-z0-9]*\\) +[A-Z]")
+                                ;; add "p4 help undoc" entry
+                                (save-excursion
+                                  (goto-char (point-min))
+                                  (when (re-search-forward (rx bol "\tp4 help legal") nil t)
+                                    (beginning-of-line)
+                                    (insert "\tp4 help undoc           "
+                                            "undocumented commands, revision ranges, etc.\n")))
+                                ;; hyperlinks for p4 help pages
+                                (cl-loop for re in
+                                         '("\\<p4\\s-+help\\s-+\\([a-z][a-z0-9]*\\)\\>"
+                                           "'p4\\(?:\\s-+-[a-z]+\\)*\\s-+\\([a-z][a-z0-9]*\\)\\>"
+                                           "^\t\\([a-z][a-z0-9]*\\) +[A-Z]")
                                          do (p4-regexp-create-links re 'help))))))
 
 (defp4cmd ;; defun p4-info
